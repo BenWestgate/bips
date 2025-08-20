@@ -225,7 +225,7 @@ OUTPUT:
 * DERIVED ENTROPY=ae131e2312cdc61331542efe0d1077bac5ea803adf24b313a4f0e48e9c51f37f
 * DERIVED BIP39 MNEMONIC=puppy ocean match cereal symbol another shed magic wrap hammer bulb intact gadget divorce twin tonight reason outdoor destroy simple truth cigar social volcano
 
-=== codex32 (BIP93)===
+===BIP93 (codex32)===
 Application Number: 93'
 
 The derivation path format is: <code>m/83696968'/93'/<hrp>'/<threshold>'/<share_count>'/<byte_length>'/<id0>'/<id1>'/<id2>'/<id3>'</code>
@@ -252,40 +252,36 @@ Valid share index characters are the Bech32 charset excluding "s": sorted alphab
 
 The Bech32 charset mapping (char to value 0-31) is as defined in BIP-0173.
 
-=====Fresh Seeds (n >= t)=====
+* Fresh Seeds (n >= t)
+  * Generate ''t'' shares with random payloads using the BIP85 DRNG:
+    * For each share, take the next available letter from the bech32 alphabet, in alphabetical order, as <code>a</code>, <code>c</code>, <code>d</code>, ..., to be the share index.
+    * Generate the payload as ceil(''byte_length * 8 / 5'') random symbols (5-bit values mapped to Bech32 chars).
+    * Note: The exact number of symbols depends on the byte_length.
+  * If ''n'' >= ''t'', use the DRNG to deterministically select additional unique indices.
+  * For additional shares ''n'' - ''t'', compute their payloads by interpolating using BIP-93 SSS rules from the initial ''t'' shares.
+  * Encode each share as a codex32 string per BIP-93.
+  * The secret can be recovered by interpolating any ''t'' shares at index "s".
 
-* Generate ''t'' shares with random payloads using the BIP85 DRNG:
-  * For each share, take the next available letter from the bech32 alphabet, in alphabetical order, as <code>a</code>, <code>c</code>, <code>d</code>, ..., to be the share index.
-  * Generate the payload as ceil(''byte_length * 8 / 5'') random symbols (5-bit values mapped to Bech32 chars).
-  * Note: The exact number of symbols depends on the byte_length.
-* If ''n'' >= ''t'', use the DRNG to deterministically select additional unique indices.
-* For additional shares ''n'' - ''t'', compute their payloads by interpolating using BIP-93 SSS rules from the initial ''t'' shares.
-* Encode each share as a codex32 string per BIP-93.
-* The secret can be recovered by interpolating any ''t'' shares at index "s".
+* Existing Master Seeds (n = t - 1)
+  * Generate ''n'' = ''t'' - 1 shares with random payloads using the DRNG, as above.
+  * Assign indices in fixed alphabetical order (<code>a</code>, <code>c</code>, <code>d</code>, ...).
+  * The existing master seed is treated as the ''t''-th share (encoded as codex32 secret with index "s").
+  * To generate additional shares, interpolate using the ''t'' points (''t''-1 generated shares + secret).
+  * Encode the generated shares as codex32 strings.
+  * To recover, combine any ''t'' shares to interpolate the secret at "s".
+  Note: For existing seeds, the software must know the master seed to compute additional shares or verify, but the derived entropy ensures deterministic randomness.
 
-=====Existing Master Seeds (n = t - 1)=====
+* Constraints
+  * Index "s" is reserved for the secret (''t'' = 0').
+  * If ''n'' < ''t'' and ''n'' != ''t'' - 1, invalid.
+  * Payloads are generated as random symbols; final encoding includes checksums per BIP-93.
+  * For identifier omitted, compute as 4 bech32 characters of the BIP32 fingerprint of the seed (payload bytes of "s") or for ''n'' = ''t'' - 1 the BIP32 fingerprint of the share payload(s) bytes.
 
-* Generate ''n'' = ''t'' - 1 shares with random payloads using the DRNG, as above.
-* Assign indices in fixed alphabetical order (<code>a</code>, <code>c</code>, <code>d</code>, ...).
-* The existing master seed is treated as the ''t''-th share (encoded as codex32 secret with index "s").
-* To generate additional shares, interpolate using the ''t'' points (''t''-1 generated shares + secret).
-* Encode the generated shares as codex32 strings.
-* To recover, combine any ''t'' shares to interpolate the secret at "s".
-
-Note: For existing seeds, the software must know the master seed to compute additional shares or verify, but the derived entropy ensures deterministic randomness.
-
-=====Constraints=====
-
-* Index "s" is reserved for the secret (''t'' = 0').
-* If ''n'' < ''t'' and ''n'' != ''t'' - 1, invalid.
-* Payloads are generated as random symbols; final encoding includes checksums per BIP-93.
-* For identifier omitted, compute as 4 bech32 characters of the BIP32 fingerprint of the seed (payload bytes of "s") or for ''n'' = ''t'' - 1 the BIP32 fingerprint of the share payload(s) bytes.
-
-Rationale:
-- Aligns with the BIP-85 convention of using the BIP number as the
-  application number where appropriate.
-- Enables deterministic generation of Codex32-compatible master seeds
-  from a single root xprv, consistent with other BIP-85 applications.
+* Rationale:
+  - Aligns with the BIP-85 convention of using the BIP number as the
+    application number where appropriate.
+  - Enables deterministic generation of Codex32-compatible master seeds
+    from a single root xprv, consistent with other BIP-85 applications.
 
 =====Examples=====
 Generates 5 "ms" prefixed codex32 shares of 32 bytes each, threshold 3, identifier "qsqp" (assuming charset mapping for 0,16,0,1).
