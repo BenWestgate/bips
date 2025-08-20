@@ -283,8 +283,8 @@ The Bech32 charset mapping (char to value 0-31) is as defined in BIP-0173.
   - Enables deterministic generation of Codex32-compatible master seeds
     from a single root xprv, consistent with other BIP-85 applications.
 
-=====Examples=====
-Generates 5 "ms" prefixed codex32 shares of 32 bytes each, threshold 3, identifier "qsqp" (assuming charset mapping for 0,16,0,1).
+====Examples====
+Generates 5 "ms" prefixed codex32 shares for a 32 byte seed, threshold 3, identifier "qsqp" (assuming charset mapping for 0,16,0,1).
 
 INPUT:
 * MASTER BIP32 ROOT KEY: xprv9s21ZrQH143K2LBWUUQRFXhucrQqBpKdRRxNVq2zBqsx8HVqFk2uYo8kmbaLLHRdqtQpUm98uKfu3vca1LqdGhUtyoFnCNkfmXRyPXLjbKb
@@ -293,12 +293,16 @@ OUTPUT:
 * DERIVED ENTROPY=
 * DERIVED BIP93 codex32=ms13qsqp... ms13qsqp... ms13qsqp... ms13qsqp... ms13qsqp...
 
+Generates 16-byte codex32 secret with identifier "test".
+
 INPUT:
 * MASTER BIP32 ROOT KEY: xprv9s21ZrQH143K2LBWUUQRFXhucrQqBpKdRRxNVq2zBqsx8HVqFk2uYo8kmbaLLHRdqtQpUm98uKfu3vca1LqdGhUtyoFnCNkfmXRyPXLjbKb
 * PATH: m/83696968'/93'/0'/0'/1'/16'/11'/25'/16'/11'
 OUTPUT:
 * DERIVED ENTROPY=
 * DERIVED BIP93 codex32=ms10tests...
+
+Generates 3 codex32 shares, 16 bytes seed, threshold 2, identifier "name".
 
 INPUT:
 * MASTER BIP32 ROOT KEY: xprv9s21ZrQH143K2LBWUUQRFXhucrQqBpKdRRxNVq2zBqsx8HVqFk2uYo8kmbaLLHRdqtQpUm98uKfu3vca1LqdGhUtyoFnCNkfmXRyPXLjbKb
@@ -307,12 +311,20 @@ OUTPUT:
 * DERIVED ENTROPY=
 * DERIVED BIP93 codex32=ms12namea... ms12namec... ms12named...
 
+Generates 2 codex32 shares, 16 bytes seed, threshold 3, identifier "cash".
+
+Note: The share indexes are alphabetized as interpolation is impossible.
+
 INPUT:
 * MASTER BIP32 ROOT KEY: xprv9s21ZrQH143K2LBWUUQRFXhucrQqBpKdRRxNVq2zBqsx8HVqFk2uYo8kmbaLLHRdqtQpUm98uKfu3vca1LqdGhUtyoFnCNkfmXRyPXLjbKb
 * PATH: m/83696968'/93'/0'/3'/2'/16'/24'/29'/16'/23'
 OUTPUT:
 * DERIVED ENTROPY=
 * DERIVED BIP93 codex32=ms13casha... ms13cashc...
+
+Generate 1 codex32 secret, 64-bytes long, with the default identifier.
+
+Note: The identifier is equal to the 20 MSB bits of the BIP32 fingerprint of the seed converted to Bech32.
 
 INPUT:
 * MASTER BIP32 ROOT KEY: xprv9s21ZrQH143K2LBWUUQRFXhucrQqBpKdRRxNVq2zBqsx8HVqFk2uYo8kmbaLLHRdqtQpUm98uKfu3vca1LqdGhUtyoFnCNkfmXRyPXLjbKb
@@ -321,12 +333,18 @@ OUTPUT:
 * DERIVED ENTROPY=
 * DERIVED BIP93 codex32=ms10????s...
 
+Generate 2 shares for a 16-byte seed, threshold 3, default identifier.
+
+Note: Indexes will be alphabetical as example 4. The identifier is the truncated Bech32 BIP32 fingerprint of secret payload bytes of "s" had the threshold been 2.
+
 INPUT:
 * MASTER BIP32 ROOT KEY: xprv9s21ZrQH143K2LBWUUQRFXhucrQqBpKdRRxNVq2zBqsx8HVqFk2uYo8kmbaLLHRdqtQpUm98uKfu3vca1LqdGhUtyoFnCNkfmXRyPXLjbKb
 * PATH: m/83696968'/93'/0'/3'/2'/16'/32'/32'/32'/32'
 OUTPUT:
 * DERIVED ENTROPY=
 * DERIVED BIP93 codex32=ms12????a... ms12????c...
+
+Generate 1 "cl" prefixed Core Lightning HSM secret, 32-bytes, identifier "cln2".
 
 INPUT:
 * MASTER BIP32 ROOT KEY: xprv9s21ZrQH143K2LBWUUQRFXhucrQqBpKdRRxNVq2zBqsx8HVqFk2uYo8kmbaLLHRdqtQpUm98uKfu3vca1LqdGhUtyoFnCNkfmXRyPXLjbKb
