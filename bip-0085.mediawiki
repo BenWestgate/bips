@@ -346,15 +346,6 @@ Note: <code>threshold == "0" and n > 1</code> is invalid.
 
 Examples:
 
-Generate an "ms" prefixed 16-byte codex32 secret with identifier "test".
-
-INPUT:
-* MASTER BIP32 ROOT KEY: xprv9s21ZrQH143K2LBWUUQRFXhucrQqBpKdRRxNVq2zBqsx8HVqFk2uYo8kmbaLLHRdqtQpUm98uKfu3vca1LqdGhUtyoFnCNkfmXRyPXLjbKb
-* PATH: m/83696968'/93'/0'/0'/1'/16'/11'/25'/16'/11'
-OUTPUT:
-* DERIVED ENTROPY=
-* DERIVED BIP93 codex32=ms10tests...
-
 Generate a "cl" prefixed Core Lightning HSM secret, 32-bytes with identifier "cln2".
 
 INPUT:
