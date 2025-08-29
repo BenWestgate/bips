@@ -402,7 +402,7 @@ Generate ''t'' initial random shares as above, then:
 
 Examples:
 
-Generate 3 codex32 shares for a 32 byte seed, threshold 2, identifier <code>"c00l"</code>.
+Generate 3 codex32 shares for a 16 byte seed, threshold 2, identifier <code>"c00l"</code>.
 
 INPUT:
 * MASTER BIP32 ROOT KEY: xprv9s21ZrQH143K2LBWUUQRFXhucrQqBpKdRRxNVq2zBqsx8HVqFk2uYo8kmbaLLHRdqtQpUm98uKfu3vca1LqdGhUtyoFnCNkfmXRyPXLjbKb
@@ -412,7 +412,7 @@ OUTPUT:
 * DERIVED BIP93 identifier=c00l
 * DERIVED BIP93 codex32=ms12c00ln4kx8hawgstmrky88szf0qc7p9snrryzwl06tay6, ms12c00lpc9sddr6j0kl48m8j7n9sfg4p39ajmq4xx40xwvt, ms12c00lyj8fjetdxqhrvt58zalgllrdpx477puthmplvva8
 
-Generate 10 codex32 shares for a 16 byte seed, threshold 3, default identifier.
+Generate 9 codex32 shares for a 16 byte seed, threshold 3, default identifier.
 
 INPUT:
 * MASTER BIP32 ROOT KEY: xprv9s21ZrQH143K2LBWUUQRFXhucrQqBpKdRRxNVq2zBqsx8HVqFk2uYo8kmbaLLHRdqtQpUm98uKfu3vca1LqdGhUtyoFnCNkfmXRyPXLjbKb
@@ -443,7 +443,7 @@ OUTPUT:
 * DERIVED BIP93 identifier=g0fy
 * DERIVED BIP93 codex32=ms13g0fyarrwyawuktl8qptwqy3np7jx3xfv992ytz5kcq8h, ms13g0fyc4e379zymy6tzdhgzwfeq6ymwlr36qext53v2vp4
 
-Generate 1 shares for a 16-byte existing master seed, threshold 2, identifier <code>"?ann"<code>.
+Generate 1 codex32 share for a 64-byte existing master seed, threshold 2, identifier <code>"?ann"<code>.
 
 Note: Indices will be alphabetical. The default identifier is the fingerprint of payload bytes of share "a".
 
