@@ -230,13 +230,13 @@ OUTPUT:
 ===BIP93 (codex32)===
 Application Number: 93'
 
-The derivation path format is: <code>m/83696968'/93'/{hrp}'/{threshold}'/{n}'/{byte_length}'/{id0}'/{id1}'/{id2}'/{id3}'</code>
+The derivation path format is: <code>m/83696968'/93'/{hrp}'/{threshold}'/{n}'/{byte_length}'/{id0}'/{id1}'/{id2}'/{id3}'/{index}'</code>
 
 Use this application to generate fresh codex32 strings (as defined in BIP-0093) for Shamir's Secret Sharing backups of BIP-0032 HD master seeds. Each codex32 string encodes a share or secret with a human-readable prefix (hrp), and a data part consisting of a threshold, identifier, share index, payload, and checksum.
 
 Create a BIP85 DRNG whose seed is the derived entropy. Read 1 byte from the DRNG and trim to the 5 most significant bits to obtain an integer (0–31), representing a bech32 character. Repeat until all required data characters are validly chosen.
 
-Example: a codex32 secret with <code>hrp = "ms"</code> (first index), <code>threshold = "0"</code>, <code>n = 1</code>, <code>byte_length = 16</code>, identifier <code>"c00l"</code> would have the path <code>m/83696968'/93'/0'/0'/1'/16'/24'/15'/15'/31'</code>, the next secret would be <code>m/83696968'/93'/0'/0'/1'/16'/24'/15'/15'/32'</code> (identifier <code>"c00?"</code>) etc.
+Example: a codex32 secret with <code>hrp = "ms"</code> (first index), <code>threshold = "0"</code>, <code>n = 1</code>, <code>byte_length = 16</code>, identifier <code>"c0??"</code> would have the path <code>m/83696968'/93'/0'/0'/1'/16'/24'/15'/32'/32'/0'</code>, the next secret would be <code>m/83696968'/93'/0'/0'/1'/16'/24'/15'/32'/32'/1'</code> (identifier <code>"c0zc"</code>) etc.
 
 
 Human-readable Prefix Table
@@ -334,7 +334,7 @@ Identifier Table
 | Default (BIP-0032 fingerprint)
 | 32'/32'/32'/32'
 |}
-The identifier is four bech32 characters converted to four integers using the character table from BIP-0173. Each identifier hardened index (idX) used in the derivation path affects the derived entropy; if idX ≥ 32 then the character emitted at that position in the encoded identifier MUST be the bech32 character for the corresponding 5-bit chunk of the 20 most significant bits of the relevant seed's BIP-0032 fingerprint (master seed, else seed recovered at t = n, else share "a" if n = 1).
+The identifier is four bech32 characters converted to four integers using the character table from BIP-0173. Each identifier hardened index (idX) used in the derivation path affects the derived entropy; if idX = 32 then the character emitted at that position in the encoded identifier MUST be the bech32 character for the corresponding 5-bit chunk of the 20 most significant bits of the relevant seed's BIP-0032 fingerprint (master seed, else seed recovered at t = n, else share "a" if n = 1).
 
 Rationale: This default assists users in locating the correct codex32 backup for their wallets, should be distinct for hundreds of backups users may need to disambiguate and, as it is widely stored, improves overall error correction.
 
@@ -346,14 +346,25 @@ Note: <code>threshold == "0" and n > 1</code> is invalid.
 
 Examples:
 
-Generate a "cl" prefixed Core Lightning HSM secret, 32-bytes with identifier "cln2".
+Generate a "ms" prefixed codex32 secret, 16-bytes, with identifier <code>"c0??"</code>
 
 INPUT:
 * MASTER BIP32 ROOT KEY: xprv9s21ZrQH143K2LBWUUQRFXhucrQqBpKdRRxNVq2zBqsx8HVqFk2uYo8kmbaLLHRdqtQpUm98uKfu3vca1LqdGhUtyoFnCNkfmXRyPXLjbKb
-* PATH: m/83696968'/93'/1'/0'/1'/32'/24'/31'/19'/10'
+* PATH: m/83696968'/93'/0'/0'/1'/16'/24'/15'/32'/32'/0'
 OUTPUT:
-* DERIVED ENTROPY=
-* DERIVED BIP93 codex32=cl10cln2s...
+* DERIVED ENTROPY=bf89dc8a7caeba703bbba213cd092800c4dd42b3efa55dc50f52f17e4000057e727512c05cdc3856d8def0eaf0d877714e18c1d74364911e8a438bcc0373e8a3
+* DERIVED BIP93 identifier=c0ny
+* DERIVED BIP93 codex32=ms10c0nys4xklclp0lneyfjmyp9uhlfdzqfwwengqaduatsw
+
+Generate a "cl" prefixed Core Lightning HSM secret, 32-bytes with default identifier.
+
+INPUT:
+* MASTER BIP32 ROOT KEY: xprv9s21ZrQH143K2LBWUUQRFXhucrQqBpKdRRxNVq2zBqsx8HVqFk2uYo8kmbaLLHRdqtQpUm98uKfu3vca1LqdGhUtyoFnCNkfmXRyPXLjbKb
+* PATH: m/83696968'/93'/1'/0'/1'/32'/32'/32'/32'/32'/0'
+OUTPUT:
+* DERIVED ENTROPY=d5d81425b6352225c002cc31002e721e93c08dbc742eefbf480d14ca788c544df912ef67f8927b3456a56dd7f6285c7642f17370154524dad3bfe294cb507242
+* DERIVED BIP93 identifier=wwak
+* DERIVED BIP93 codex32=cl10wwakss63h2vh43mjdk9sjjendkyy2mvt2n6frt83sly7afjh85xl3l9qlp63pyuukcyqyf
 
 ====Share Generation====
 
@@ -391,24 +402,25 @@ Generate ''t'' initial random shares as above, then:
 
 Examples:
 
-Generate 3 codex32 shares for a 32 byte seed, threshold 2, default identifier.
+Generate 3 codex32 shares for a 32 byte seed, threshold 2, identifier <code>"c00l"</code>.
 
 INPUT:
 * MASTER BIP32 ROOT KEY: xprv9s21ZrQH143K2LBWUUQRFXhucrQqBpKdRRxNVq2zBqsx8HVqFk2uYo8kmbaLLHRdqtQpUm98uKfu3vca1LqdGhUtyoFnCNkfmXRyPXLjbKb
-* PATH: m/83696968'/93'/0'/2'/3'/16'/32'/32'/32'/32'
+* PATH: m/83696968'/93'/0'/2'/3'/16'/24'/15'/15'/31'/0'
 OUTPUT:
-* DERIVED ENTROPY=
-* DERIVED BIP93 codex32=ms12?????... ms12?????... ms12?????...
+* DERIVED ENTROPY=08d7bfdb5bb43e00046af47b31063def05ea70afed5e8c3ab88a80213efe548da0171c8ba30501844ea2cee9e830138306f8a9c429acdba6e1d050b2b50fad3f
+* DERIVED BIP93 identifier=c00l
+* DERIVED BIP93 codex32=ms12c00ln4kx8hawgstmrky88szf0qc7p9snrryzwl06tay6, ms12c00lpc9sddr6j0kl48m8j7n9sfg4p39ajmq4xx40xwvt, ms12c00lyj8fjetdxqhrvt58zalgllrdpx477puthmplvva8
 
-Generate 10 codex32 shares for a 16 byte seed, threshold 3, identifier <code>"name"</code>.
+Generate 10 codex32 shares for a 16 byte seed, threshold 3, default identifier.
 
 INPUT:
 * MASTER BIP32 ROOT KEY: xprv9s21ZrQH143K2LBWUUQRFXhucrQqBpKdRRxNVq2zBqsx8HVqFk2uYo8kmbaLLHRdqtQpUm98uKfu3vca1LqdGhUtyoFnCNkfmXRyPXLjbKb
-* PATH: m/83696968'/93'/0'/3'/10'/16'/19'/29'/27'/25'
+* PATH: m/83696968'/93'/0'/3'/9'/16'/32'/32'/32'/32'/0'
 OUTPUT:
-* DERIVED ENTROPY=
-* DERIVED BIP93 codex32=ms13name... ms13name... ms13name... ms13name... ms13name...
-
+* DERIVED ENTROPY= c18b7dd81fb08b55b3cd16070fa625a0436db43186ab5f7d636b58e73decc5539b59ab93d65e932448933637241e17933d97f37c541a3319148a25e8e306cf10
+* DERIVED BIP93 identifier=ms8t
+* DERIVED BIP93 codex32=ms13ms8tu5dtz5c6d7lfg7l48mmewvhdu0z6q6eav29umjhl, ms13ms8tneyjzext4y7cd0s6c2gwn92smyldywhfrzc2xmhq, ms13ms8tz6nt2nvekkjyqn2lqdszm8pfydmmttfytvg28fcv, ms13ms8tdh6j27jgwvn49z9slur4xwu5rxxv0l8syy4u6qcn, ms13ms8tp85zuyk2ct2msvjjtvwxljg52fza02ln8plkfegf, ms13ms8tcfk9nlh8e6uhaqrxrk9pa8djsquk4xhs4zv87jnv, ms13ms8tenrpvzdmjtxkuputf72p4xy422s8n2dryeva3yk2, ms13ms8tjr3kayuh74yevw0hjz8wmyrhpwnuzzd6jecsfdjx, ms13ms8tf2pum4a46gstsuerm3ad49xt0fcq6rfaavu8lquq
 
 =====For an existing master seed=====
 
@@ -427,19 +439,21 @@ INPUT:
 * MASTER BIP32 ROOT KEY: xprv9s21ZrQH143K2LBWUUQRFXhucrQqBpKdRRxNVq2zBqsx8HVqFk2uYo8kmbaLLHRdqtQpUm98uKfu3vca1LqdGhUtyoFnCNkfmXRyPXLjbKb
 * PATH: m/83696968'/93'/0'/3'/2'/16'/8'/15'/32'/32'
 OUTPUT:
-* DERIVED ENTROPY=
-* DERIVED BIP93 codex32=ms13g0??a... ms13g0??c...
+* DERIVED ENTROPY=c23f717c2d3f124ea5596aa23449ba91a9b189953aaa925f33dfd16f35b6ca86000a1c11e6080f20ae6470019ee8f585a11af483a59b15b2827b5605ad61772b
+* DERIVED BIP93 identifier=g0fy
+* DERIVED BIP93 codex32=ms13g0fyarrwyawuktl8qptwqy3np7jx3xfv992ytz5kcq8h, ms13g0fyc4e379zymy6tzdhgzwfeq6ymwlr36qext53v2vp4
 
-Generate 1 shares for a 16-byte existing master seed, threshold 2, default identifier.
+Generate 1 shares for a 16-byte existing master seed, threshold 2, identifier <code>"?ann"<code>.
 
 Note: Indices will be alphabetical. The default identifier is the fingerprint of payload bytes of share "a".
 
 INPUT:
 * MASTER BIP32 ROOT KEY: xprv9s21ZrQH143K2LBWUUQRFXhucrQqBpKdRRxNVq2zBqsx8HVqFk2uYo8kmbaLLHRdqtQpUm98uKfu3vca1LqdGhUtyoFnCNkfmXRyPXLjbKb
-* PATH: m/83696968'/93'/0'/3'/2'/16'/32'/32'/32'/32'
+* PATH: m/83696968'/93'/0'/2'/1'/64'/32'/29'/19'/19'/0'
 OUTPUT:
-* DERIVED ENTROPY=
-* DERIVED BIP93 codex32=ms12????a...
+* DERIVED ENTROPY=bb4fb0e144930d545836177820d173cc250b9084ac50ce3aa6816efaed2dc750cc687b71c9c95a372009427ced155e78622a81defed03321aea49f4d4fdb688b
+* DERIVED BIP93 identifier=mann
+* DERIVED BIP93 codex32=ms12mannaczq4kkph3gtppqu5ehjes6fvsyh09m0tk3ag5z3tkq5p5menyjpukyy2dvddk4yu979949g08jlfdt4w946we8dynamcu22c0tr6s2rndpnrmqac6z23nd
 
 ===HD-Seed WIF===
 Application number: 2'
