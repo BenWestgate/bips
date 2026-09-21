@@ -611,7 +611,48 @@ These unshared codex32-encoded master seeds use the identifier <code>seed</code>
 ** The discarded bit has the value <code>1</code>.
 ** codex32 secret: <code>ms10seedsgpq5ys6yg4rywjzfff95cn2wfag9z5jn2324v46ct9d9hrcduqw8c3lccl</code>
 
+===Test vector 9===
+
+This example shows a codex32 secret with a human-readable part other than <code>ms</code>.
+The human-readable part <code>cl</code> is registered in SLIP-0173 for Core Lightning HSM secrets; that application, not this document, defines the payload.
+
+codex32 secret: <code>cl10peevst6cqh0wu7p5ssjyf4z4ez42ks9jlt3zneju9uuypr2hddak6tlqsjhsks4laxts8q</code>
+
+* human-readable part: <code>cl</code>
+* separator: <code>1</code>
+* k value: <code>0</code> (no secret splitting)
+* identifier: <code>peev</code>
+* share index: <code>s</code> (the secret)
+* payload: <code>t6cqh0wu7p5ssjyf4z4ez42ks9jlt3zneju9uuypr2hddak6tlqs</code>
+* checksum: <code>jhsks4laxts8q</code>
+
+The checksum covers the human-readable part.
+With the human-readable part <code>ms</code>, the same header and payload form a 256-bit codex32-encoded master seed with a different checksum: <code>ms10peevst6cqh0wu7p5ssjyf4z4ez42ks9jlt3zneju9uuypr2hddak6tlqstxmpzl24l6e0d</code>
+
+===Test vector 10===
+
+This example shows generating shares with the 11-character human-readable part <code>test_vector</code>, using ''k''=2 and an identifier of <code>span</code>.
+The payloads have 52 characters, as for a 256-bit master seed.
+Each string has an expanded codeword length of 96, so it uses the long checksum even though its data part has only 73 characters.
+
+Share with index <code>a</code>: <code>test_vector12spana320zyxwvutsrqpnmlkjhgfedca320zyxwvutsrqpnmlkjhgfedca304ppsqh4l7v3dh</code>
+
+Share with index <code>c</code>: <code>test_vector12spancacdefghjklmnpqrstuvwxyz023acdefghjklmnpqrstuvwxyz023jxmjy7q9xl7d3ul</code>
+
+* Derived share with index <code>d</code>: <code>test_vector12spandll4f8jlh4e5vdvuldlfxu2jhdnll4f8jlh4e5vdvuldlfxu2jhdnx3pe3yqzdl7p30y</code>
+* Recovered secret with index <code>s</code>: <code>test_vector12spans6xqguzttxkeqnjsjzv4jv3nz5k6xqguzttxkeqnjsjzv4jv3nz5kdf37v5qm2l7l3az</code>
+
+===Test vector 11===
+
+This example shows a codex32 secret with an empty payload and the longest allowed human-readable part, which has 83 characters.
+The human-readable part contains <code>1</code>, so the last <code>1</code> is the separator, and it contains <code>b</code>, <code>i</code>, and <code>o</code>, which cannot appear in the data part.
+Its expanded codeword length of 188 requires the long checksum.
+
+codex32 secret: <code>a83characterlongcodex32keyexpressionhrpwiththedigit1andexcludedcharsbioandmorefille10keyss96q8vc4aex7n34l</code>
+
 ===Invalid test vectors===
+
+None of the following examples are valid codex32-encoded master seeds or master seed shares, although some are valid codex32 strings for decoders that do not apply the master seed rules.
 
 These examples have incorrect checksums.
 
@@ -668,15 +709,21 @@ This example has a threshold that is not a digit.
 
 * <code>ms1fauxxxxxxxxxxxxxxxxxxxxxxxxxxxxxda3kr3s0s2swg</code>
 
-These examples do not begin with the required "ms" or "MS" prefix and/or are missing the "1" separator.
+These examples are missing the "1" separator or have an empty human-readable part.
 
 * <code>0fauxsxxxxxxxxxxxxxxxxxxxxxxxxxxuqxkk05lyf3x2</code>
 * <code>10fauxsxxxxxxxxxxxxxxxxxxxxxxxxxxuqxkk05lyf3x2</code>
 * <code>ms0fauxsxxxxxxxxxxxxxxxxxxxxxxxxxxuqxkk05lyf3x2</code>
-* <code>m10fauxsxxxxxxxxxxxxxxxxxxxxxxxxxxuqxkk05lyf3x2</code>
-* <code>s10fauxsxxxxxxxxxxxxxxxxxxxxxxxxxxuqxkk05lyf3x2</code>
 * <code>0fauxsxxxxxxxxxxxxxxxxxxxxxxxxxxhkd4f70m8lgws</code>
 * <code>10fauxsxxxxxxxxxxxxxxxxxxxxxxxxxxhkd4f70m8lgws</code>
+
+These examples have a checksum computed for the human-readable part "ms", but a different human-readable part.
+
+* <code>m10fauxsxxxxxxxxxxxxxxxxxxxxxxxxxxuqxkk05lyf3x2</code>
+* <code>s10fauxsxxxxxxxxxxxxxxxxxxxxxxxxxxuqxkk05lyf3x2</code>
+
+These examples are valid codex32 strings, but not master seeds, because their human-readable part is not "ms".
+
 * <code>m10fauxsxxxxxxxxxxxxxxxxxxxxxxxxxx8t28z74x8hs4l</code>
 * <code>s10fauxsxxxxxxxxxxxxxxxxxxxxxxxxxxh9d0fhnvfyx3x</code>
 
@@ -689,6 +736,19 @@ These examples all incorrectly mix upper and lower case characters.
 * <code>ms10fauxSxxxxxxxxxxxxxxxxxxxxxxxxxxuqxkk05lyf3x2</code>
 * <code>ms10fauxsXXXXXXXXXXXXXXXXXXXXXXXXXXuqxkk05lyf3x2</code>
 * <code>ms10fauxsxxxxxxxxxxxxxxxxxxxxxxxxxxUQXKK05LYF3X2</code>
+
+These examples have a human-readable part other than "ms" and the invalid expanded codeword lengths 94 and 95. They use the regular and long checksums, respectively.
+
+* <code>test_vector12spans6xqguzttxkeqnjsjzv4jv3nz5k6xqguzttxkeqnjsjzv4jv3nz5kp0f0tlr2cxh0t</code>
+* <code>test_vector12spans6xqguzttxkeqnjsjzv4jv3nz5k6xqguzttxkeqnjsjzv4jv3nz5c2m7mxmk8s5qecp</code>
+
+This example has a checksum computed using the uppercase form of the human-readable part.
+
+* <code>CL10PEEVST6CQH0WU7P5SSJYF4Z4EZ42KS9JLT3ZNEJU9UUYPR2HDDAK6TLQS3J5AYX4Y08079</code>
+
+This example has a human-readable part longer than 83 characters.
+
+* <code>a84characterlongcodex32keyexpressionhrpwiththedigit1andexcludedcharsbioandmorefiller10keysscn7tlttnvefxewy</code>
 
 ==Changelog==
 
