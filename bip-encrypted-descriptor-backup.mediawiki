@@ -1,0 +1,146 @@
+<pre>
+  BIP: ?
+  Layer: Applications
+  Title: Encrypted Descriptor Backup via BIP-0085
+  Authors: Ben Westgate <BenWestgate@protonmail.com>
+  Status: Draft
+  Type: Informational
+  Assigned: ?
+  License: BSD-3-Clause
+</pre>
+
+==Introduction==
+
+===Abstract===
+
+This document recommends a standard way to back up a wallet's watch-only output descriptor with privacy comparable to
+the secret it derives from, by encrypting it to a key deterministically derived from the same seed via
+[https://github.com/bitcoin/bips/blob/master/bip-0085.mediawiki BIP-0085]'s existing RSA-GPG application. It fixes the
+derivation parameters this use should use, so that independent implementations derive the same key and interoperate,
+and recommends when a wallet should offer this instead of, or alongside, plaintext descriptor export.
+
+===Copyright===
+
+This document is licensed under the 3-clause BSD license.
+
+===Motivation===
+
+A watch-only descriptor is enough to monitor a wallet's balance and history without exposing spending keys, and losing
+it costs privacy, not funds: extended public keys and script structure are recoverable from the seed at any time, so a
+lost descriptor is an inconvenience, not a disaster. Storing it in the clear is a common recommendation, since it
+appears to have little to protect.
+
+This is not always true. A descriptor reveals which addresses belong to the same wallet, including future ones, and
+for a multisignature wallet it identifies every cosigner's extended public key. A locally-stored, unencrypted
+descriptor found in a device search, backup service breach, or estate paperwork discloses this even though no funds
+are at risk directly; the same disclosure can motivate a targeted attack against the funds themselves, or against the
+people identified as cosigners. Where descriptors are shared between cosigners or a watch-only server, this privacy
+loss is multiplied across every location.
+
+The direct fix, storing the descriptor only in memory or destroying it after use, conflicts with the descriptor's own
+purpose: watch-only monitoring is meant to be ongoing, not a one-time lookup, and needs a durable copy somewhere.
+
+An earlier discussion of this
+tradeoff<ref>'''Prior discussion.''' [https://github.com/BlockstreamResearch/codex32/discussions/65 A 2023 discussion
+of backing up codex32 wallets' extended public keys] considered redacting each cosigner's own key from a shared
+descriptor for privacy, and concluded that encrypting the complete descriptor to oneself is preferable: redaction
+only protects the redacting party, leaks a "public 2-of-2, private 1-of-2" property that participants may not expect,
+and does not help a single-signature wallet at all, whereas whole-descriptor encryption applies uniformly and needs no
+special handling of participants.</ref> concluded that the descriptor should be encrypted whole, to a key the user can
+always reconstruct from their existing seed, rather than redacted or protected by a separately-managed secret. BIP-0085
+already defines a suitable key: its RSA-GPG application derives a deterministic GPG-compatible RSA keypair, including a
+dedicated encryption subkey, from a BIP-0032 root key. This document fixes the remaining parameters (key size and
+index) needed for independent wallets to derive the identical key, and recommends the resulting workflow.
+
+==Specification==
+
+===Key derivation===
+
+Implementations MUST derive the encryption key as the BIP-0085 RSA-GPG encryption subkey at
+<code>m/83696968'/828365'/4096'/0'/0'</code>: RSA-GPG application (<code>828365'</code>), 4096-bit key size, key index
+0, encryption subkey (<code>0'</code>), as specified in BIP-0085's RSA GPG section. The fixed creation timestamp
+specified there (UNIX epoch 1231006505) MUST be used, since the derived key's GPG fingerprint depends on it.
+
+4096 bits is chosen as the only key size this document defines, so that implementations that support only one size
+interoperate; see Rationale.
+
+===Encrypting a descriptor===
+
+To back up a descriptor, encrypt its exact text, encoded as UTF-8, to the public part of the key above, using
+[https://www.rfc-editor.org/rfc/rfc4880 OpenPGP] (RFC 4880) or a compatible implementation.
+Implementations SHOULD prefer an AEAD-protected OpenPGP mode where available, over the older MDC-protected mode<ref>
+'''Why prefer AEAD?''' OpenPGP's original integrity mechanism (MDC) has known construction weaknesses; OpenPGP's
+current AEAD modes address these. Since this key is used for nothing else, there is no compatibility reason to prefer
+the older mode.</ref>. The resulting ciphertext MAY be stored or transmitted like any other encrypted file; unlike the
+descriptor's plaintext, its disclosure does not by itself reveal wallet structure.
+
+===Recovering a descriptor===
+
+To recover the descriptor, re-derive the same private key from the same seed and decrypt the ciphertext with any
+compatible OpenPGP implementation.
+
+===Wallet behavior===
+
+A wallet that supports this specification SHOULD offer it as the default export option for a watch-only descriptor
+whenever the user has not indicated the descriptor may be handled as public information, and MUST make plaintext
+export available as an explicit alternative. A wallet MUST warn before plaintext export that the descriptor identifies
+every address the wallet will ever use, and, for a multisignature wallet, every cosigner.
+
+==Rationale==
+
+'''Why BIP-0085 rather than a fresh key?''' A key independent of the seed would need its own backup, recreating the
+exact backup-multiplication problem this document exists to avoid. A BIP-0085-derived key needs no separate backup: it
+is always reconstructable from the same seed the user already protects, using the same care they already give it.
+
+'''Why RSA-GPG specifically, rather than a new derivation and format?''' BIP-0085 already defines this application,
+including a subkey designated for encryption; reusing it needs no new cryptographic construction, and produces a
+key immediately usable with existing, widely deployed OpenPGP tooling, rather than a bespoke format needing its own
+implementation. Native OpenPGP hybrid encryption also removes the need for this document to separately specify a
+symmetric cipher, key-wrapping scheme, or ciphertext format.
+
+'''Why fix one key size instead of letting wallets choose?''' BIP-0085's RSA-GPG path already parameterizes key size;
+this document does not need to reintroduce that choice, only to fix one value so implementations agree without
+negotiation. 4096 bits is chosen as a conservative, widely-supported OpenPGP RSA size. A future version of this
+document MAY define additional sizes if 4096-bit RSA generation proves impractical on constrained hardware; see Open
+questions.
+
+'''Why key index 0 rather than deriving from wallet-specific data?''' A fixed index keeps the derivation path
+independent of the descriptor being protected. Recovery therefore does not depend on remembering, or separately
+recording, which index was used.
+
+==Backwards compatibility==
+
+This document defines a new use of already-specified BIP-0085 derivation; it changes nothing about existing BIP-0085
+applications, GPG, or descriptors, and a descriptor backed up this way decrypts to byte-identical plaintext with any
+compliant OpenPGP implementation.
+
+==Privacy and security considerations==
+
+The encrypted backup reveals nothing about wallet structure, but its mere existence and approximate size may still
+disclose that the holder uses Bitcoin and, roughly, how large a descriptor they protect. Where this matters, treat the
+ciphertext's storage location with the same consideration given to that metadata for any other encrypted file.
+
+This document inherits BIP-0085's own security assumption that its DRNG output is only as strong as the root key's own
+secrecy; anyone who can derive this GPG key can derive the encryption subkey and decrypt every backup made under it.
+It does not change who can spend funds: this key has no signing authority over the wallet itself, only over its own
+backups.
+
+==Reference implementation==
+
+None yet. RSA-GPG key derivation and GPG subkey import are implemented by existing BIP-0085 tools; encrypting and
+decrypting the resulting descriptor is ordinary OpenPGP usage requiring no new code beyond deriving the key and
+invoking existing tooling.
+
+==Open questions==
+
+This is an early draft; the choices above have not yet had review. In particular:
+
+* Should a hardware wallet be expected to perform RSA-4096 generation and OpenPGP encryption itself, or only export
+  the derived key for a companion application to use? 4096-bit RSA key generation is markedly heavier than the
+  elliptic-curve operations most hardware wallets already perform.
+* Should this document define a non-GPG, minimal hybrid-encryption alternative for constrained devices, rather than
+  depending on full OpenPGP support?
+* Does encrypting to a single RSA key, with no additional passphrase, provide adequate protection on its own, or
+  should this document recommend an additional layer for the ciphertext at rest?
+
+<references />
