@@ -1,0 +1,112 @@
+<pre>
+  BIP: ?
+  Layer: Applications
+  Title: Codex32 Encoding for Descriptor Key Expressions
+  Authors: Ben Westgate <BenWestgate@protonmail.com>
+  Status: Draft
+  Type: Informational
+  Assigned: ?
+  License: BSD-3-Clause
+</pre>
+
+==Introduction==
+
+===Abstract===
+
+This document proposes a family of codex32 human-readable parts (HRPs) for the key material that appears in a
+[https://github.com/bitcoin/bips/blob/master/bip-0380.mediawiki BIP-0380] descriptor <code>KEY</code> expression:
+public keys, x-only public keys, WIF-equivalent private keys, and BIP-0032 extended keys. It depends on
+[https://github.com/bitcoin/bips/pull/2040 the codex32 HRP generalization], since each type below needs its own HRP
+rather than the fixed "ms" BIP-0093 currently requires.
+
+This is a concept-stage draft: naming and two specific open questions (below) are unresolved, and no test vectors
+have been written yet. It is being circulated for feedback before either is finalized.
+
+===Copyright===
+
+This document is licensed under the 3-clause BSD license.
+
+===Motivation===
+
+A descriptor's <code>KEY</code> expression can be a hex public key, a WIF private key, or a base58 xpub/xprv, any of
+which may need to survive being copied by hand, printed, or transmitted through a channel (QR, voice, a paper card)
+prone to transcription errors. None of these formats has BIP-0093's checksum, error-detection/-correction, or
+Shamir-secret-sharing properties: a single mistyped character in an xpub either fails opaquely or, worse, silently
+resolves to a different valid xpub. Extending codex32 to this material gives it the same guarantees a codex32 seed
+backup already has.
+
+==Specification (sketch)==
+
+===HRP registry===
+
+{| class="wikitable"
+! HRP !! Meaning !! Payload
+|-
+| <code>pk</code> || Public key || 33 bytes (compressed) or 65 bytes (uncompressed)
+|-
+| <code>xo</code> || X-only public key (BIP-0340) || 32 bytes
+|-
+| <code>wif</code> / <code>twif</code> || Private key, mainnet / testnet || 32-byte scalar plus a compression-status character (see Open questions)
+|-
+| <code>xpub</code> / <code>xprv</code> / <code>tpub</code> / <code>tprv</code> || BIP-0032 extended key, mainnet/testnet public/private || depth, parent fingerprint, child number, chain code, key (74 bytes; the codex32 HRP replaces the base58 version bytes)
+|-
+| ''undecided'' (<code>mn</code> or <code>rn</code>) || Combined chain code + private key ("root node"), for a BIP-0032 master key with no depth/fingerprint/child-number fields || 64 bytes
+|}
+
+<code>pk</code> and <code>xo</code> deliberately have no network-tagged variant, matching BIP-0380's own hex pubkeys:
+the key material is network-agnostic, and network is a property of the address/script built from it, not the key.
+
+An xpub or xprv's own fingerprint (first 32 bits of Hash160 of its pubkey) MAY be used as its codex32 identifier by
+default only for HRPs whose fingerprint carries no separate correlation risk (<code>xo</code>). For <code>pk</code>,
+the fingerprint doubles as the P2PKH/P2WPKH address's own hash160, so using it as a share identifier would let a
+single below-threshold share leak which on-chain address(es) it belongs to; other HRPs should not default to it
+either without the same analysis.
+
+===Key-origin information===
+
+Open question: encode <code>[fingerprint/path]</code> exactly as BIP-0380 does, as a bracketed prefix outside the
+codex32 string, or offer folding it into the codex32 HRP itself? See Open questions.
+
+==Rationale==
+
+'''Why <code>pk</code> and not <code>pub</code>?''' Consistency with the descriptor function names that already mean
+"public key" everywhere in BIP-0380/381/382 (<code>pk()</code>, <code>pkh()</code>, <code>wpkh()</code>), and it's
+shorter. It reads like "private key" out of context, but not inside a codex32/descriptor context where every use of
+"pk" already means public key.
+
+'''Why not shorten <code>wif</code>/<code>twif</code> further?''' "WIF" is already a maximally-compressed,
+universally-recognized term with no equally-recognized shorter form to fall back on, unlike <code>pub</code>→<code>pk</code>
+which had one ready to reuse. <code>twf</code>, <code>twi</code>, and <code>wit</code> (the last easily confused with
+"witness") are all less recognizable than keeping the existing name with a <code>t</code> prefix, matching
+<code>tpub</code>/<code>tprv</code>.
+
+'''Why does <code>pk</code>/<code>xo</code>/<code>xpub</code>/<code>tpub</code> generation require padding rather
+than free choice, unlike a seed?''' These payloads embed an actual elliptic-curve public key, which must satisfy
+curve membership; a randomly chosen payload essentially never does. BIP-0093's "fresh secret" procedure (freely
+choose payload symbols) therefore doesn't apply to these HRPs the way it does to a seed — implementations MUST treat
+the last symbol(s) as fixed padding rather than free choice for these types. This does not apply to
+<code>xprv</code>/<code>tprv</code>/<code>wif</code>/<code>twif</code>: a private scalar has no membership
+constraint, so free choice remains valid there.
+
+==Backwards compatibility==
+
+New HRPs under the generalized-HRP codex32 grammar; no effect on existing "ms"/"cl"-HRP codex32 strings or on
+BIP-0380 descriptors that don't use codex32-encoded keys.
+
+==Open questions==
+
+* Key-origin info: bracketed BIP-0380 syntax outside the codex32 string, or an HRP-folded form? Folding it in is a
+  real QR-size reduction for multisig descriptors (origin info is often the largest contributor to a cosigner-heavy
+  descriptor's QR footprint), at the cost of a second way to write the same information.
+* WIF compression status: a dedicated first character (two reserved charset values, e.g. <code>q</code>=compressed /
+  <code>p</code>=uncompressed) versus folding the flag into the payload's existing padding bits. The padding-bit form
+  is one character shorter but exactly as unreadable at a glance as the byte-flag WIF format already is; a dedicated
+  character costs one symbol to make the status actually visible without decoding.
+* Root-node HRP name: <code>mn</code> ("master node") or <code>rn</code> ("root node")? <code>rn</code> is
+  unregistered in SLIP-0173 as of this writing; <code>mn</code> needs the same check.
+* Whether/how to specify folding origin info into a multisig descriptor's overall QR encoding at the Bitcoin Core
+  level (an export-xpub feature), versus leaving that entirely to wallet software. Any such change is purely
+  encoder-side: a standard QR reader decodes a multi-segment code identically to a single-segment one, so this
+  imposes no requirement on decoders.
+
+<references />
