@@ -125,6 +125,20 @@ secrecy; anyone who can derive this GPG key can derive the encryption subkey and
 It does not change who can spend funds: this key has no signing authority over the wallet itself, only over its own
 backups.
 
+'''Decryption does not authenticate the descriptor's source or intended use.''' Encrypting to a public key, by itself,
+proves nothing about who produced the plaintext: OpenPGP's public encryption subkey is, as its name states, public, so
+anyone who obtains it (a keyserver publication, a leaked ciphertext's key ID, or any other disclosure) can construct a
+fresh, validly-encrypted backup addressed to it while choosing an arbitrary descriptor as the payload. An AEAD tag or
+OpenPGP's integrity mechanism authenticates that the ciphertext was not modified after encryption; it does not
+authenticate that the plaintext came from the wallet owner or matches the wallet's actual policy. This matters
+specifically for recovery: a recovered descriptor can carry archived output state, and an implementation that treats
+successful decryption as sufficient to resume address generation could be steered onto an attacker-chosen policy.
+Implementations SHOULD treat a decrypted descriptor as untrusted until it is checked against an independent
+commitment to the intended wallet or policy (for example, a previously-recorded fingerprint of the expected
+descriptor), and SHOULD import it inactive rather than immediately generating or watching addresses from it.
+Implementations that want the OpenPGP layer itself to establish provenance MAY additionally sign the backup with a
+key the recipient already trusts, rather than relying on encryption alone.
+
 ==Reference implementation==
 
 None yet. RSA-GPG key derivation and GPG subkey import are implemented by existing BIP-0085 tools; encrypting and
@@ -135,12 +149,11 @@ invoking existing tooling.
 
 This is an early draft; the choices above have not yet had review. In particular:
 
-* Should a hardware wallet be expected to perform RSA-4096 generation and OpenPGP encryption itself, or only export
-  the derived key for a companion application to use? 4096-bit RSA key generation is markedly heavier than the
-  elliptic-curve operations most hardware wallets already perform.
 * Should this document define a non-GPG, minimal hybrid-encryption alternative for constrained devices, rather than
   depending on full OpenPGP support?
 * Does encrypting to a single RSA key, with no additional passphrase, provide adequate protection on its own, or
   should this document recommend an additional layer for the ciphertext at rest?
+* Should this document normatively require a signature (see Privacy and security considerations) rather than leaving
+  it optional?
 
 <references />
