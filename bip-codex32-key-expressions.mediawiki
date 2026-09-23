@@ -4,7 +4,7 @@
   Title: Codex32 Encoding for Descriptor Key Expressions
   Authors: Ben Westgate <BenWestgate@protonmail.com>
   Status: Draft
-  Type: Informational
+  Type: Specification
   Assigned: ?
   License: BSD-3-Clause
 </pre>
@@ -13,14 +13,10 @@
 
 ===Abstract===
 
-This document proposes a family of codex32 human-readable parts (HRPs) for the key material that appears in a
-[https://github.com/bitcoin/bips/blob/master/bip-0380.mediawiki BIP-0380] descriptor <code>KEY</code> expression:
-public keys, x-only public keys, WIF-equivalent private keys, and BIP-0032 extended keys. It depends on
-[https://github.com/bitcoin/bips/pull/2040 the codex32 HRP generalization], since each type below needs its own HRP
-rather than the fixed "ms" BIP-0093 currently requires.
-
-This is a concept-stage draft: naming and two specific open questions (below) are unresolved, and no test vectors
-have been written yet. It is being circulated for feedback before either is finalized.
+This document proposes an encoding format using codex32 for the key material that appears in a
+[https://github.com/bitcoin/bips/blob/master/bip-0380.mediawiki BIP-0380] descriptor <code>KEY</code> expression.
+Each kind of key material gets its own human-readable part and its own serialization. It depends on the codex32 HRP
+generalization, since BIP-0093 currently fixes the HRP as <code>ms</code>.
 
 ===Copyright===
 
@@ -28,134 +24,213 @@ This document is licensed under the 3-clause BSD license.
 
 ===Motivation===
 
-A descriptor's <code>KEY</code> expression can be a hex public key, a WIF private key, or a base58 xpub/xprv, any of
-which may need to survive being copied by hand, printed, or transmitted through a channel (QR, voice, a paper card)
-prone to transcription errors. None of these formats has BIP-0093's checksum, error-detection/-correction, or
-Shamir-secret-sharing properties: a single mistyped character in an xpub either fails opaquely or, worse, silently
-resolves to a different valid xpub. Extending codex32 to this material gives it the same guarantees a codex32 seed
-backup already has.
+A descriptor <code>KEY</code> expression carries a hex public key, a WIF private key, or a base58 extended key, any
+of which may have to survive being copied by hand, printed, photographed, or read aloud. None of those formats has
+codex32's guarantees and properties: a single mistyped character in an xpub or in its key origin information either
+fails opaquely or silently resolves to different, valid key material. Base58's checksum detects errors but cannot
+locate or correct them, and neither base58 nor hex can be split into shares.
 
-==Specification (sketch)==
+Codex32 supplies error detection, error correction and Shamir secret sharing for the same material, and, because an
+uppercase codex32 string is drawn from QR's alphanumeric character set while base58 and lowercase hex are not, it
+encodes to a smaller QR symbol than the format it replaces in every case but one (see Rationale).
 
-===HRP registry===
+==Specification==
 
-{| class="wikitable"
-! HRP !! Meaning !! Payload
-|-
-| <code>pk</code> || Public key || 33 bytes (compressed) or 65 bytes (uncompressed)
-|-
-| <code>xo</code> || X-only public key (BIP-0340) || 32 bytes
-|-
-| <code>wif</code> / <code>twif</code> || Private key, mainnet / testnet || 32-byte scalar plus a compression-status marker (form undecided; see Open questions)
-|-
-| <code>xpub</code> / <code>xprv</code> / <code>tpub</code> / <code>tprv</code> || BIP-0032 extended key, mainnet/testnet public/private || depth, parent fingerprint, child number, chain code, key (74 bytes; the codex32 HRP replaces the base58 version bytes)
-|-
-| ''undecided'' (<code>mn</code> or <code>rn</code>) || Combined chain code + private key ("root node"), for a BIP-0032 master key with no depth/fingerprint/child-number fields || 64 bytes
-|}
+===Serialization===
 
-<code>pk</code> and <code>xo</code> deliberately have no network-tagged variant, matching BIP-0380's own hex pubkeys:
-the key material is network-agnostic, and network is a property of the address/script built from it, not the key.
+Each payload below is the key material with every byte that the HRP already implies removed: base58 version bytes,
+and the <code>0x00</code> prefix BIP-0032 places in front of a private key's 32-byte scalar. A compressed public key
+is serialized as 257 bits, the 256-bit x-coordinate preceded by one bit giving the y-coordinate's parity, rather than
+as the 33 bytes its <code>0x02</code>/<code>0x03</code> prefix form would occupy.
 
-An xpub or xprv's own fingerprint (first 32 bits of Hash160 of its pubkey) MAY be used as its codex32 identifier by
-default only for HRPs whose fingerprint carries no separate correlation risk (<code>xo</code>). For <code>pk</code>,
-the fingerprint doubles as the P2PKH/P2WPKH address's own hash160, so using it as a share identifier would let a
-single below-threshold share leak which on-chain address(es) it belongs to; other HRPs should not default to it
-either without the same analysis.
-
-===Key-origin information===
-
-Open question: encode <code>[fingerprint/path]</code> exactly as BIP-0380 does, as a bracketed prefix outside the
-codex32 string, or offer folding it into the codex32 HRP itself? See Open questions.
-
-===Network and compression status, measured against WIF===
-
-Wallet Import Format already solves both problems, and sets the bar this document should meet. WIF base58check-encodes
-a version byte (<code>0x80</code> mainnet, <code>0xEF</code> testnet), the 32-byte scalar, and an appended
-<code>0x01</code> when the key belongs to a compressed public key. Because base58's leading character follows from the
-leading bytes' numeric range, both facts fall out of the first character:
+Payloads are a whole number of bytes only by coincidence, so each has some number of spare bits left over in its
+final symbol. Since every payload here is fixed length, those bits are always present and are specified rather than
+left as zero padding.
 
 {| class="wikitable"
-! !! uncompressed !! compressed
+! HRP !! Key material !! Payload bits !! Symbols !! Spare bits !! Spare bits carry !! String length
 |-
-| '''mainnet''' || <code>5</code>, 51 characters || <code>K</code> or <code>L</code>, 52 characters
+| <code>pk</code> || Public key, compressed || 257 || 52 || 3 || CRC-3 || 74
 |-
-| '''testnet''' || <code>9</code>, 51 characters || <code>c</code>, 52 characters
+| <code>pk</code> || Public key, uncompressed || 520 || 104 || 0 || — || 128
+|-
+| <code>xo</code> || X-only public key (BIP-0340) || 256 || 52 || 4 || CRC-4 || 74
+|-
+| <code>pr</code> || Private key, any network || 256 || 52 || 4 || network and compression status || 74
+|-
+| <code>xpub</code>/<code>tpub</code> || Extended public key || 585 || 117 || 0 || — || 143
+|-
+| <code>xprv</code>/<code>tprv</code> || Extended private key || 584 || 117 || 1 || parity || 143
+|-
+| <code>rn</code> || Root node: chain code and scalar || 512 || 103 || 3 || CRC-3, or unconstrained || 127
 |}
 
-So WIF spends one character on compression status (the appended byte costs one base58 character) and gets
-glanceability for both fields as a side effect of the encoding, not as a deliberate allocation.
+A compressed <code>pk</code>, an <code>xo</code> and a <code>pr</code> are all 74 characters with a 2-character HRP
+and a 52-symbol payload, matching <code>cl</code> and a 256-bit <code>ms</code> seed. Key material that is
+interchangeable inside a script therefore has an interchangeable shape, so an implementation can assume one length.
 
-Codex32 already exceeds WIF on network: <code>wif</code> versus <code>twif</code> is a human-readable prefix rather
-than a leading character whose meaning has to be memorised. Compression status is the open question, and a 32-byte
-scalar occupies 52 symbols with exactly 4 spare bits, which gives three candidates:
+===Private keys===
 
-# '''Dedicated leading symbol.''' Reserve two charset values at a fixed position, for example <code>q</code>
-  (value 0) for compressed and <code>p</code> (value 1) for uncompressed, giving the common case the simplest symbol
-  as segwit did for witness version 0. Costs one symbol, 53 payload symbols in total. A single fixed character per
-  state, so marginally clearer than WIF's <code>K</code>/<code>L</code> pair. '''Matches WIF's cost.'''
-# '''Trailing spare bits.''' Put the flag in the payload's existing 4 spare bits. Costs nothing, 52 payload symbols,
-  but the flag shares its symbol with key data, so the character looks random and the status is invisible without
-  decoding — exactly the weakness of WIF's internal <code>0x01</code> byte, without base58's accidental compensation.
-  '''Cheaper than WIF, less readable.'''
-# '''Leading spare bits.''' Place the same 4 spare bits at the front instead of the back. The first payload symbol is
-  then 4 flag bits plus one key bit, so it takes exactly two values per state: compressed (<code>0b0000</code>) makes
-  it <code>q</code> or <code>p</code>, uncompressed (<code>0b0001</code>) makes it <code>z</code> or <code>r</code>.
-  Costs nothing, 52 payload symbols, and is glanceable at a two-character pair — the same cognitive load as WIF's
-  <code>K</code>/<code>L</code>. '''Exceeds WIF: same readability, one character cheaper.'''
+<code>pr</code> is a single HRP for every network, as <code>pk</code> is. Network and compression status live in the
+payload's 4 spare bits, placed ahead of the scalar rather than after it, so that they land in the first payload
+character instead of being scattered through the last one.
 
-Option 3 spends the spare bits that would otherwise be available for a padding CRC; they can carry a flag or a
-checksum, not both. That trade is acceptable for <code>wif</code>/<code>twif</code> specifically, because a private
-scalar has no curve-membership constraint and so does not depend on padding being computed rather than chosen — see
-Rationale. A fourth option is to decline uncompressed private keys altogether and spend nothing, at the cost of being
-unable to represent legacy keys that BIP-0380 still permits in <code>pk()</code>, <code>pkh()</code> and
-<code>combo()</code>.
+The 4 bits are the network bit <code>n</code> (1 mainnet, 0 testnet) and the compression bit <code>c</code>
+(1 compressed, 0 uncompressed), repeated as <code>n c n c</code>. The first payload symbol is those 4 bits followed
+by the scalar's most significant bit, so each status has two possible first characters:
 
-Spare-bit inventory for the other types, for reviewers weighing whether the same technique applies elsewhere:
-compressed <code>pk</code> has 1 spare bit, <code>xo</code> has 4, the extended-key body has 3, the root node has 3,
-and uncompressed <code>pk</code> has none. Only <code>wif</code> currently has a status worth signalling; the rest are
-single-form, or already distinguished by length (<code>pk</code>, at 76 versus 129 characters) or by the HRP itself.
+{| class="wikitable"
+! Status !! Bits !! First character !! WIF's leading character
+|-
+| mainnet, uncompressed || <code>1010</code> || <code>5</code> or <code>4</code> || <code>5</code>
+|-
+| mainnet, compressed || <code>1111</code> || <code>7</code> or <code>l</code> || <code>K</code> or <code>L</code>
+|-
+| testnet, uncompressed || <code>0000</code> || <code>q</code> or <code>p</code> || <code>9</code>
+|-
+| testnet, compressed || <code>0101</code> || <code>2</code> or <code>t</code> || <code>c</code>
+|}
+
+Repeating the flags rather than spending 2 bits on status and 2 on a CRC serves three purposes: it keeps the number
+of possible first characters at two per status instead of eight, it puts the four valid bit patterns at a minimum
+Hamming distance of 2 from one another, and it makes 12 of the 16 patterns invalid, so corruption confined to those
+bits is caught by the encoding itself and not only by the checksum.
+
+===Cross-status ambiguity===
+
+Reading the status wrongly produces a valid key on the wrong network, or with the wrong compression, and therefore a
+different address. Three things bound that risk, and one does not:
+
+* Any single-character substitution anywhere in a codex32 string, including in the status character, invalidates the
+  checksum. A misread status is detected, not silently accepted.
+* Twelve of the sixteen status bit patterns are unused, so a corruption landing in the status bits alone is caught
+  even before the checksum is consulted.
+* The four characters within each column are visually distinct in the bech32 alphabet, which already excludes
+  <code>1</code>, <code>b</code>, <code>i</code> and <code>o</code> for confusability.
+* Hamming distance ''between symbol values'' is not a meaningful safeguard here and should not be cited as one.
+  Codex32's code is over GF(32); it counts symbol errors, so a status character differing from another in one bit
+  and one differing in four bits are both simply one symbol error. Bit distance only matters for the bit-level
+  detection described above.
+
+The residual risk is mis-correction rather than misreading: a decoder correcting errors elsewhere in the string could
+in principle satisfy the checksum by altering the status character instead. Implementations therefore SHOULD NOT
+correct the status character, and SHOULD report a correction that would change it rather than applying it, for the
+same reason BIP-0093 says implementations should not correct the human-readable part.
+
+===Identifier===
+
+The first 20 bits of a key's BIP-0032 fingerprint MAY be used as the default codex32 identifier, but only for
+<code>xo</code>. The identifier is four bech32 characters, so a 32-bit fingerprint does not fit and must be
+truncated; implementations that adopt this default MUST take the first 20 bits so that they interoperate.
+
+For every other profile in this document the default is inappropriate, for a reason specific to each:
+
+* <code>pk</code> and <code>pr</code>: the fingerprint is the first 20 bits of <code>hash160</code> of the public
+  key, which is exactly the first 20 bits of a P2PKH or P2WPKH output's script. A single share, below the threshold
+  and on its own, would then narrow the on-chain outputs it belongs to by a factor of about a million. The property
+  secret sharing protects for public key material is not the secrecy of the key, which is meant to become known, but
+  the unlinkability of one recovered share to a particular wallet's on-chain history. A fingerprint default would
+  give that away.
+* <code>xo</code> is the exception because a P2TR output commits to the tweaked output key, not to
+  <code>hash160</code> of the internal key, so that hash appears nowhere on chain and correlates to nothing a
+  passive observer can see.
+* <code>xpub</code>, <code>tpub</code>, <code>xprv</code> and <code>tprv</code>: the fingerprint is not published on
+  chain, but it is carried in descriptors and PSBTs shared with cosigners and watch-only servers, so it remains a
+  cross-document correlator between a share and a wallet those parties already hold.
+* <code>rn</code>: a root node's fingerprint is the master fingerprint that appears in the key origin information of
+  every descriptor derived from it, making it the strongest correlator of all.
+
+Where the default does not apply, the identifier SHOULD be chosen the way BIP-0093 already suggests, and MUST NOT be
+derived from the key material.
+
+===Generation from fresh shares===
+
+BIP-0093's procedure for generating a fresh secret by freely choosing share payloads applies only where every payload
+value of the right length is valid. That holds for <code>rn</code> if its spare bits are left unconstrained, which is
+why this document permits that alternative, and it holds for no other profile here:
+
+* <code>pk</code>, <code>xo</code>, <code>xpub</code> and <code>tpub</code> embed a public key that must be on the
+  curve, which a freely chosen payload essentially never is.
+* <code>xprv</code> and <code>tprv</code> additionally fix depth, parent fingerprint and child number, which a freely
+  chosen payload will not satisfy.
+* <code>pk</code>, <code>xo</code> and the extended keys constrain their spare bits to a CRC or parity of the rest of
+  the payload, which a freely chosen final symbol will not match.
+* <code>pr</code> constrains its spare bits to one of four status patterns.
+
+For these profiles a fresh key MUST be generated first and then split, rather than assembled from freely chosen
+shares.
 
 ==Rationale==
 
-'''Why <code>pk</code> and not <code>pub</code>?''' Consistency with the descriptor function names that already mean
-"public key" everywhere in BIP-0380/381/382 (<code>pk()</code>, <code>pkh()</code>, <code>wpkh()</code>), and it's
-shorter. It reads like "private key" out of context, but not inside a codex32/descriptor context where every use of
-"pk" already means public key.
+'''Why one HRP for private keys instead of <code>wif</code> and <code>twif</code>?''' A 4-character <code>twif</code>
+would have the same shape as <code>tpub</code> and <code>tprv</code> while holding something entirely different, which
+works against letting implementations infer length from the HRP. <code>pk</code> already covers every network with one
+HRP, and a private key is what a public key is derived from, so <code>pr</code> alongside <code>pk</code> keeps both
+the shape and the pairing. It is unregistered in SLIP-0173.
 
-'''Why not shorten <code>wif</code>/<code>twif</code> further?''' "WIF" is already a maximally-compressed,
-universally-recognized term with no equally-recognized shorter form to fall back on, unlike <code>pub</code>→<code>pk</code>
-which had one ready to reuse. <code>twf</code>, <code>twi</code>, and <code>wit</code> (the last easily confused with
-"witness") are all less recognizable than keeping the existing name with a <code>t</code> prefix, matching
-<code>tpub</code>/<code>tprv</code>.
+'''Why not a dedicated status character?''' Spending a 53rd payload symbol would make the first character fully
+determined, so the four statuses could be exactly <code>5</code>, <code>k</code>, <code>9</code> and <code>c</code>,
+matching WIF's leading characters outright, and would free all 4 spare bits for a CRC-4. It costs one character and,
+because 74 and 75 characters fall in the same QR version at every error-correction level, that character is free in
+QR terms. It is not free in shape terms: it would make a private key one character longer than the compressed public
+key it is interchangeable with. This document keeps the shapes matched, and records the alternative as an open
+question rather than settling it.
 
-'''Why does <code>pk</code>/<code>xo</code>/<code>xpub</code>/<code>tpub</code> generation require padding rather
-than free choice, unlike a seed?''' These payloads embed an actual elliptic-curve public key, which must satisfy
-curve membership; a randomly chosen payload essentially never does. BIP-0093's "fresh secret" procedure (freely
-choose payload symbols) therefore doesn't apply to these HRPs the way it does to a seed — implementations MUST treat
-the last symbol(s) as fixed padding rather than free choice for these types. This does not apply to
-<code>xprv</code>/<code>tprv</code>/<code>wif</code>/<code>twif</code>: a private scalar has no membership
-constraint, so free choice remains valid there.
+'''What WIF already achieves.''' WIF, introduced by Pieter Wuille in 2011, base58check-encodes a version byte
+(<code>0x80</code> mainnet, <code>0xEF</code> testnet), the scalar, and an appended <code>0x01</code> when the key is
+compressed. Because base58's leading character follows from the leading bytes' numeric range, both facts are legible
+from the first character: <code>5</code> and <code>9</code> for uncompressed mainnet and testnet at 51 characters,
+<code>K</code>/<code>L</code> and <code>c</code> for compressed at 52. This document matches that legibility on
+mainnet, where the first character is <code>5</code> or <code>4</code> uncompressed and <code>7</code> or
+<code>l</code> compressed, and substitutes its own convention on testnet, where <code>t</code> is available as a
+mnemonic. It exceeds WIF in that the status is a specified field rather than an artifact of the encoding, and that
+corrupting it is detectable.
+
+'''Version bytes versus an indicator symbol.''' Bech32-era formats replaced version bytes with a witness version
+symbol, as checksums moved from truncated SHA-256 to BCH. The choice here is accordingly between constraining spare
+bits that already exist and spending a character, not between a version byte and anything else.
+
+'''QR size.''' An uppercase codex32 string is entirely within QR's alphanumeric character set, at 5.5 bits per
+character; base58 and lowercase hex require byte mode at 8. Measured with a QR encoder rather than estimated:
+
+{| class="wikitable"
+! Key material !! This document !! QR version !! Existing format !! QR version
+|-
+| Public key, compressed || 74 characters || 3 || 66 hex characters || 4
+|-
+| Public key, uncompressed || 128 characters || 5 || 130 hex characters || 6
+|-
+| X-only public key || 74 characters || 3 || 64 hex characters || 4
+|-
+| Extended key || 143 characters || 5 || 111 base58 characters || 6
+|-
+| Private key || 74 characters || 3 || 52 WIF characters || 3
+|}
+
+Every type but one encodes to a QR symbol one version smaller than the format it replaces, despite being longer as
+text. The private key is the exception and ties: 74 alphanumeric characters is 407 data bits against WIF's 416, so it
+is the smaller payload of the two, but both fall inside version 3, and they continue to tie at every other
+error-correction level. WIF is a hard baseline here precisely because it is short: at 52 characters it sits one byte
+under version 3's 53-byte capacity, so nothing that carries a 13-character checksum and a 6-character header can beat
+it without a version boundary falling differently.
 
 ==Backwards compatibility==
 
-New HRPs under the generalized-HRP codex32 grammar; no effect on existing "ms"/"cl"-HRP codex32 strings or on
-BIP-0380 descriptors that don't use codex32-encoded keys.
+These are new HRPs under the generalized-HRP codex32 grammar. Nothing changes for existing <code>ms</code> or
+<code>cl</code> strings, for BIP-0380 descriptors, or for WIF, hex and base58 serializations, which remain valid
+inputs wherever they are accepted today.
 
 ==Open questions==
 
-* Key-origin info: bracketed BIP-0380 syntax outside the codex32 string, or an HRP-folded form? Folding it in is a
-  real QR-size reduction for multisig descriptors (origin info is often the largest contributor to a cosigner-heavy
-  descriptor's QR footprint), at the cost of a second way to write the same information.
-* WIF compression status: which of the four options in "Network and compression status, measured against WIF" to
-  adopt. Leading spare bits (option 3) appear to beat WIF outright — same two-character readability, one character
-  cheaper than a dedicated symbol — but they consume the bits a padding CRC would otherwise use, and they put
-  meaningful bits at the front of a payload where codex32 conventionally pads at the end. Reviewers who consider that
-  deviation unacceptable should say so, in which case option 1 matches WIF rather than exceeding it.
-* Root-node HRP name: <code>mn</code> ("master node") or <code>rn</code> ("root node")? <code>rn</code> is
-  unregistered in SLIP-0173 as of this writing; <code>mn</code> needs the same check.
-* Whether/how to specify folding origin info into a multisig descriptor's overall QR encoding at the Bitcoin Core
-  level (an export-xpub feature), versus leaving that entirely to wallet software. Any such change is purely
-  encoder-side: a standard QR reader decodes a multi-segment code identically to a single-segment one, so this
-  imposes no requirement on decoders.
+* Whether to spend a 53rd symbol on a dedicated status character, buying exact parity with WIF's leading characters
+  and a CRC-4, at the cost of the shape match with <code>pk</code>. It is free in QR terms.
+* Key origin information: a bracketed BIP-0380 prefix outside the codex32 string, or folded into the HRP. Folding is
+  the larger QR saving, since origin information dominates a cosigner-heavy descriptor, but a bare key is where the
+  one-version saving above comes from, and an encoder that does not segment loses much of it.
+* Whether <code>rn</code> should constrain its spare bits to a CRC-3 or leave them unconstrained. Only the
+  unconstrained form can be produced by BIP-0093's fresh-share procedure.
+* Whether the extended-key HRPs should stay 4 characters, given that the same reasoning that rejected
+  <code>twif</code> applies to telling <code>xprv</code> and <code>tprv</code> apart from each other by content
+  rather than by shape.
 
 <references />
