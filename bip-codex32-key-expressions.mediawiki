@@ -31,17 +31,20 @@ fails opaquely or silently resolves to different, valid key material. Base58's c
 locate or correct them, and neither base58 nor hex can be split into shares.
 
 Codex32 supplies error detection, error correction and Shamir secret sharing for the same material, and, because an
-uppercase codex32 string is drawn from QR's alphanumeric character set while base58 and lowercase hex are not, it
-encodes to a smaller QR symbol than the format it replaces in every case but one (see Rationale).
+uppercase codex32 string is drawn from QR's alphanumeric character set while base58 is not, it encodes an extended
+key to a QR symbol one version smaller than base58 does, despite being longer as text (see Rationale).
 
 ==Specification==
 
 ===Serialization===
 
-Each payload below is the key material with every byte that the HRP already implies removed: base58 version bytes,
-and the <code>0x00</code> prefix BIP-0032 places in front of a private key's 32-byte scalar. A compressed public key
-is serialized as 257 bits, the 256-bit x-coordinate preceded by one bit giving the y-coordinate's parity, rather than
-as the 33 bytes its <code>0x02</code>/<code>0x03</code> prefix form would occupy.
+Each payload below is the key material with every bit that the HRP already implies removed. The base58 version bytes
+go, and so does the <code>0x00</code> that BIP-0032 places in front of a private key's 32-byte scalar: whether a key
+is public or private is what the HRP says, so that byte never carried information in the first place.
+
+<code>serP(K)</code> is 33 bytes, but it is 257 bits of information: 256 bits of x-coordinate and one bit of
+y-coordinate parity, since the <code>0x02</code>/<code>0x03</code> prefix distinguishes exactly two cases. Compressed
+public keys are therefore serialized in 257 bits wherever they appear, both bare and inside an extended key.
 
 Payloads are a whole number of bytes only by coincidence, so each has some number of spare bits left over in its
 final symbol. Since every payload here is fixed length, those bits are always present and are specified rather than
@@ -58,9 +61,9 @@ left as zero padding.
 |-
 | <code>pr</code> || Private key, any network || 256 || 52 || 4 || network and compression status || 74
 |-
-| <code>xpub</code>/<code>tpub</code> || Extended public key || 585 || 117 || 0 || — || 143
+| <code>xpub</code>/<code>tpub</code> || Extended public key || 588 || 118 || 2 || CRC-2 || 144
 |-
-| <code>xprv</code>/<code>tprv</code> || Extended private key || 584 || 117 || 1 || parity || 143
+| <code>xprv</code>/<code>tprv</code> || Extended private key || 587 || 118 || 3 || CRC-3 || 144
 |-
 | <code>rn</code> || Root node: chain code and scalar || 512 || 103 || 3 || CRC-3, or unconstrained || 127
 |}
@@ -68,6 +71,37 @@ left as zero padding.
 A compressed <code>pk</code>, an <code>xo</code> and a <code>pr</code> are all 74 characters with a 2-character HRP
 and a 52-symbol payload, matching <code>cl</code> and a 256-bit <code>ms</code> seed. Key material that is
 interchangeable inside a script therefore has an interchangeable shape, so an implementation can assume one length.
+An extended public and an extended private key are likewise the same length as each other, which is why dropping
+BIP-0032's <code>0x00</code> is safe to do: it changes the spare-bit count and nothing else.
+
+===Extended key fields===
+
+BIP-0032's metadata fields are re-cut so that each one occupies a whole number of characters, leaving the chain code
+and key as the only fields that straddle character boundaries:
+
+{| class="wikitable"
+! Field !! Bits !! Characters !! Notes
+|-
+| Depth || 5 || 1 || Values 0 to 31; an extended key deeper than 31 cannot be encoded
+|-
+| Parent fingerprint || 35 || 7 || The 32-bit fingerprint, preceded by 3 bits that MUST be zero
+|-
+| Child number || 35 || 7 || The 32-bit child number, preceded by 3 bits that MUST be zero
+|-
+| Chain code || 256 || — || Begins on a character boundary at character 16
+|-
+| Key || 257 or 256 || — || <code>serP(K)</code> as 257 bits, or the scalar as 256
+|}
+
+The first fifteen characters are therefore readable as three distinct fields rather than as one run of noise, and a
+master key, whose depth, parent fingerprint and child number are all zero, begins with fifteen <code>q</code>
+characters. The derivation index of a child key can be read directly out of characters 9 to 15 without decoding.
+
+Padding the fingerprint to 35 bits rather than truncating it to 30 is deliberate. Truncation would fit the field into
+6 characters and save a character overall, but the parent fingerprint is matched against key origin information in
+descriptors and PSBTs, so discarding two of its bits makes the conversion back to a base58 extended key impossible to
+perform correctly. Depth is the one field that is genuinely narrowed rather than padded, and is restricted rather
+than truncated: a key with depth above 31 is not representable, which no practical derivation path approaches.
 
 ===Private keys===
 
@@ -75,26 +109,31 @@ interchangeable inside a script therefore has an interchangeable shape, so an im
 payload's 4 spare bits, placed ahead of the scalar rather than after it, so that they land in the first payload
 character instead of being scattered through the last one.
 
-The 4 bits are the network bit <code>n</code> (1 mainnet, 0 testnet) and the compression bit <code>c</code>
-(1 compressed, 0 uncompressed), repeated as <code>n c n c</code>. The first payload symbol is those 4 bits followed
-by the scalar's most significant bit, so each status has two possible first characters:
+The first payload symbol is the scalar's most significant bit followed by the 4 status bits; the remaining 51 symbols
+are the scalar's other 255 bits, which is an exact fit. Because that leading scalar bit is free, each status has two
+possible first characters rather than one. The four status values are chosen so that '''an uncompressed key always
+begins with a digit and a compressed key always begins with a letter''':
 
 {| class="wikitable"
-! Status !! Bits !! First character !! WIF's leading character
+! Status !! Status bits !! First character !! WIF's leading character
 |-
-| mainnet, uncompressed || <code>1010</code> || <code>5</code> or <code>4</code> || <code>5</code>
+| mainnet, uncompressed || <code>1010</code> || <code>2</code> or <code>6</code> || <code>5</code>
 |-
-| mainnet, compressed || <code>1111</code> || <code>7</code> or <code>l</code> || <code>K</code> or <code>L</code>
+| mainnet, compressed || <code>0110</code> || <code>x</code> or <code>k</code> || <code>K</code> or <code>L</code>
 |-
-| testnet, uncompressed || <code>0000</code> || <code>q</code> or <code>p</code> || <code>9</code>
+| testnet, uncompressed || <code>0101</code> || <code>9</code> or <code>4</code> || <code>9</code>
 |-
-| testnet, compressed || <code>0101</code> || <code>2</code> or <code>t</code> || <code>c</code>
+| testnet, compressed || <code>1000</code> || <code>g</code> or <code>c</code> || <code>c</code>
 |}
 
-Repeating the flags rather than spending 2 bits on status and 2 on a CRC serves three purposes: it keeps the number
-of possible first characters at two per status instead of eight, it puts the four valid bit patterns at a minimum
-Hamming distance of 2 from one another, and it makes 12 of the 16 patterns invalid, so corruption confined to those
-bits is caught by the encoding itself and not only by the checksum.
+Three of the four keep WIF's own leading character as one of their two options. The digit-and-letter split is only
+possible at all because the free scalar bit sits at the top of the symbol: of the five positions it could occupy,
+only two leave more than one pair of adjacent values that are both digits, and the bech32 alphabet contains just nine
+digits against twenty-three letters. Putting it anywhere else makes the convention unsatisfiable.
+
+Twelve of the sixteen status values are unused, so corruption confined to these bits is caught by the encoding itself
+and not only by the checksum. The two characters within each row occur with equal frequency, since the scalar's top
+bit is unbiased; for comparison, WIF's own <code>K</code>/<code>L</code> pair splits about 45/55.
 
 ===Cross-status ambiguity===
 
@@ -105,12 +144,13 @@ different address. Three things bound that risk, and one does not:
   checksum. A misread status is detected, not silently accepted.
 * Twelve of the sixteen status bit patterns are unused, so a corruption landing in the status bits alone is caught
   even before the checksum is consulted.
-* The four characters within each column are visually distinct in the bech32 alphabet, which already excludes
-  <code>1</code>, <code>b</code>, <code>i</code> and <code>o</code> for confusability.
+* Compression status is legible from the character class alone: a digit is uncompressed, a letter is compressed.
+  A reader who recalls nothing else about the format cannot mistake one for the other, and the bech32 alphabet
+  already excludes <code>1</code>, <code>b</code>, <code>i</code> and <code>o</code> for confusability.
 * Hamming distance ''between symbol values'' is not a meaningful safeguard here and should not be cited as one.
   Codex32's code is over GF(32); it counts symbol errors, so a status character differing from another in one bit
-  and one differing in four bits are both simply one symbol error. Bit distance only matters for the bit-level
-  detection described above.
+  and one differing in four bits are both simply one symbol error. Bit distance matters only for the bit-level
+  detection described above, which is why the status values are not chosen to maximise it.
 
 The residual risk is mis-correction rather than misreading: a decoder correcting errors elsewhere in the string could
 in principle satisfy the checksum by altering the status character instead. Implementations therefore SHOULD NOT
@@ -170,49 +210,62 @@ the shape and the pairing. It is unregistered in SLIP-0173.
 
 '''Why not a dedicated status character?''' Spending a 53rd payload symbol would make the first character fully
 determined, so the four statuses could be exactly <code>5</code>, <code>k</code>, <code>9</code> and <code>c</code>,
-matching WIF's leading characters outright, and would free all 4 spare bits for a CRC-4. It costs one character and,
-because 74 and 75 characters fall in the same QR version at every error-correction level, that character is free in
-QR terms. It is not free in shape terms: it would make a private key one character longer than the compressed public
-key it is interchangeable with. This document keeps the shapes matched, and records the alternative as an open
-question rather than settling it.
+matching WIF's leading characters outright while still reading digit for uncompressed and letter for compressed, and
+would free all 4 spare bits for a CRC-4. It costs one character and, because 74 and 75 characters fall in the same QR
+version at every error-correction level, that character is free in QR terms. It is not free in shape terms: it would
+make a private key one character longer than the compressed public key it is interchangeable with. This document
+keeps the shapes matched, and records the alternative as an open question rather than settling it, because it is the
+stronger option on every axis except that one.
 
 '''What WIF already achieves.''' WIF, introduced by Pieter Wuille in 2011, base58check-encodes a version byte
 (<code>0x80</code> mainnet, <code>0xEF</code> testnet), the scalar, and an appended <code>0x01</code> when the key is
 compressed. Because base58's leading character follows from the leading bytes' numeric range, both facts are legible
 from the first character: <code>5</code> and <code>9</code> for uncompressed mainnet and testnet at 51 characters,
-<code>K</code>/<code>L</code> and <code>c</code> for compressed at 52. This document matches that legibility on
-mainnet, where the first character is <code>5</code> or <code>4</code> uncompressed and <code>7</code> or
-<code>l</code> compressed, and substitutes its own convention on testnet, where <code>t</code> is available as a
-mnemonic. It exceeds WIF in that the status is a specified field rather than an artifact of the encoding, and that
-corrupting it is detectable.
+<code>K</code>/<code>L</code> and <code>c</code> for compressed at 52. Note that WIF's own indicator is a pair, not a
+single character, and an unequal one: <code>K</code> and <code>L</code> occur in roughly a 45/55 split.
+
+This document keeps WIF's character as one of the two options in three of the four cases, and is more legible than
+WIF in two respects. The status is a specified field rather than a side effect of where a number happens to fall,
+so corrupting it is detectable; and compression is readable from the character class, digit against letter, rather
+than from four memorised characters. It cannot reproduce <code>K</code> and <code>L</code> as a pair, because the
+two options for any status differ in exactly one bit of the symbol and those two characters differ in three.
 
 '''Version bytes versus an indicator symbol.''' Bech32-era formats replaced version bytes with a witness version
 symbol, as checksums moved from truncated SHA-256 to BCH. The choice here is accordingly between constraining spare
 bits that already exist and spending a character, not between a version byte and anything else.
 
 '''QR size.''' An uppercase codex32 string is entirely within QR's alphanumeric character set, at 5.5 bits per
-character; base58 and lowercase hex require byte mode at 8. Measured with a QR encoder rather than estimated:
+character, where byte mode costs 8. Measured with a QR encoder rather than estimated, at error-correction level L:
 
 {| class="wikitable"
 ! Key material !! This document !! QR version !! Existing format !! QR version
 |-
-| Public key, compressed || 74 characters || 3 || 66 hex characters || 4
+| Extended key || 144 characters || 5 || 111 base58 characters || 6
 |-
-| Public key, uncompressed || 128 characters || 5 || 130 hex characters || 6
+| Public key, compressed || 74 characters || 3 || 66 hex characters || 4 lowercase, 3 uppercase
 |-
-| X-only public key || 74 characters || 3 || 64 hex characters || 4
+| X-only public key || 74 characters || 3 || 64 hex characters || 4 lowercase, 3 uppercase
 |-
-| Extended key || 143 characters || 5 || 111 base58 characters || 6
+| Public key, uncompressed || 128 characters || 5 || 130 hex characters || 6 lowercase, 5 uppercase
 |-
 | Private key || 74 characters || 3 || 52 WIF characters || 3
 |}
 
-Every type but one encodes to a QR symbol one version smaller than the format it replaces, despite being longer as
-text. The private key is the exception and ties: 74 alphanumeric characters is 407 data bits against WIF's 416, so it
-is the smaller payload of the two, but both fall inside version 3, and they continue to tie at every other
-error-correction level. WIF is a hard baseline here precisely because it is short: at 52 characters it sits one byte
-under version 3's 53-byte capacity, so nothing that carries a 13-character checksum and a 6-character header can beat
-it without a version boundary falling differently.
+The saving against base58 is real and cannot be taken back: base58's alphabet is mixed case, so a base58 string can
+never use alphanumeric mode, and an extended key is a version smaller here despite being 33 characters longer as
+text.
+
+The saving against hex is conditional and should not be claimed without qualification. Descriptors write hex in
+lower case, which forces byte mode, but hex is case-insensitive as a value, so an encoder is free to upper-case a
+bare key before encoding it and land in the same version as codex32. Against lower-case hex as actually written,
+codex32 saves a version; against an encoder that upper-cases first, it ties.
+
+The private key ties with WIF, and no arrangement of this format beats it. 74 alphanumeric characters is 407 data
+bits against WIF's 416, so codex32 is already the smaller payload, but both fall inside version 3 at every
+error-correction level. Version 2 holds 47 alphanumeric characters, and a 256-bit scalar alone is 52 symbols, so even
+discarding the checksum and the header entirely leaves 52 characters, still inside version 3. There is no version to
+be won here: WIF at 52 characters sits one byte under version 3's 53-byte capacity, and a 52-symbol payload sits
+25 characters under version 3's 77-character capacity.
 
 ==Backwards compatibility==
 
@@ -223,7 +276,10 @@ inputs wherever they are accepted today.
 ==Open questions==
 
 * Whether to spend a 53rd symbol on a dedicated status character, buying exact parity with WIF's leading characters
-  and a CRC-4, at the cost of the shape match with <code>pk</code>. It is free in QR terms.
+  and a CRC-4, at the cost of the shape match with <code>pk</code>. It is free in QR terms, and is the stronger
+  option on every other axis, so the shape match is the whole of the argument against it.
+* Whether restricting depth to 0-31 is acceptable, or whether it should be padded to 10 bits so that every BIP-0032
+  depth remains representable. That costs one further character and is also free in QR terms.
 * Key origin information: a bracketed BIP-0380 prefix outside the codex32 string, or folded into the HRP. Folding is
   the larger QR saving, since origin information dominates a cosigner-heavy descriptor, but a bare key is where the
   one-version saving above comes from, and an encoder that does not segment loses much of it.
