@@ -46,7 +46,7 @@ backup already has.
 |-
 | <code>xo</code> || X-only public key (BIP-0340) || 32 bytes
 |-
-| <code>wif</code> / <code>twif</code> || Private key, mainnet / testnet || 32-byte scalar plus a compression-status character (see Open questions)
+| <code>wif</code> / <code>twif</code> || Private key, mainnet / testnet || 32-byte scalar plus a compression-status marker (form undecided; see Open questions)
 |-
 | <code>xpub</code> / <code>xprv</code> / <code>tpub</code> / <code>tprv</code> || BIP-0032 extended key, mainnet/testnet public/private || depth, parent fingerprint, child number, chain code, key (74 bytes; the codex32 HRP replaces the base58 version bytes)
 |-
@@ -66,6 +66,54 @@ either without the same analysis.
 
 Open question: encode <code>[fingerprint/path]</code> exactly as BIP-0380 does, as a bracketed prefix outside the
 codex32 string, or offer folding it into the codex32 HRP itself? See Open questions.
+
+===Network and compression status, measured against WIF===
+
+Wallet Import Format already solves both problems, and sets the bar this document should meet. WIF base58check-encodes
+a version byte (<code>0x80</code> mainnet, <code>0xEF</code> testnet), the 32-byte scalar, and an appended
+<code>0x01</code> when the key belongs to a compressed public key. Because base58's leading character follows from the
+leading bytes' numeric range, both facts fall out of the first character:
+
+{| class="wikitable"
+! !! uncompressed !! compressed
+|-
+| '''mainnet''' || <code>5</code>, 51 characters || <code>K</code> or <code>L</code>, 52 characters
+|-
+| '''testnet''' || <code>9</code>, 51 characters || <code>c</code>, 52 characters
+|}
+
+So WIF spends one character on compression status (the appended byte costs one base58 character) and gets
+glanceability for both fields as a side effect of the encoding, not as a deliberate allocation.
+
+Codex32 already exceeds WIF on network: <code>wif</code> versus <code>twif</code> is a human-readable prefix rather
+than a leading character whose meaning has to be memorised. Compression status is the open question, and a 32-byte
+scalar occupies 52 symbols with exactly 4 spare bits, which gives three candidates:
+
+# '''Dedicated leading symbol.''' Reserve two charset values at a fixed position, for example <code>q</code>
+  (value 0) for compressed and <code>p</code> (value 1) for uncompressed, giving the common case the simplest symbol
+  as segwit did for witness version 0. Costs one symbol, 53 payload symbols in total. A single fixed character per
+  state, so marginally clearer than WIF's <code>K</code>/<code>L</code> pair. '''Matches WIF's cost.'''
+# '''Trailing spare bits.''' Put the flag in the payload's existing 4 spare bits. Costs nothing, 52 payload symbols,
+  but the flag shares its symbol with key data, so the character looks random and the status is invisible without
+  decoding — exactly the weakness of WIF's internal <code>0x01</code> byte, without base58's accidental compensation.
+  '''Cheaper than WIF, less readable.'''
+# '''Leading spare bits.''' Place the same 4 spare bits at the front instead of the back. The first payload symbol is
+  then 4 flag bits plus one key bit, so it takes exactly two values per state: compressed (<code>0b0000</code>) makes
+  it <code>q</code> or <code>p</code>, uncompressed (<code>0b0001</code>) makes it <code>z</code> or <code>r</code>.
+  Costs nothing, 52 payload symbols, and is glanceable at a two-character pair — the same cognitive load as WIF's
+  <code>K</code>/<code>L</code>. '''Exceeds WIF: same readability, one character cheaper.'''
+
+Option 3 spends the spare bits that would otherwise be available for a padding CRC; they can carry a flag or a
+checksum, not both. That trade is acceptable for <code>wif</code>/<code>twif</code> specifically, because a private
+scalar has no curve-membership constraint and so does not depend on padding being computed rather than chosen — see
+Rationale. A fourth option is to decline uncompressed private keys altogether and spend nothing, at the cost of being
+unable to represent legacy keys that BIP-0380 still permits in <code>pk()</code>, <code>pkh()</code> and
+<code>combo()</code>.
+
+Spare-bit inventory for the other types, for reviewers weighing whether the same technique applies elsewhere:
+compressed <code>pk</code> has 1 spare bit, <code>xo</code> has 4, the extended-key body has 3, the root node has 3,
+and uncompressed <code>pk</code> has none. Only <code>wif</code> currently has a status worth signalling; the rest are
+single-form, or already distinguished by length (<code>pk</code>, at 76 versus 129 characters) or by the HRP itself.
 
 ==Rationale==
 
@@ -98,10 +146,11 @@ BIP-0380 descriptors that don't use codex32-encoded keys.
 * Key-origin info: bracketed BIP-0380 syntax outside the codex32 string, or an HRP-folded form? Folding it in is a
   real QR-size reduction for multisig descriptors (origin info is often the largest contributor to a cosigner-heavy
   descriptor's QR footprint), at the cost of a second way to write the same information.
-* WIF compression status: a dedicated first character (two reserved charset values, e.g. <code>q</code>=compressed /
-  <code>p</code>=uncompressed) versus folding the flag into the payload's existing padding bits. The padding-bit form
-  is one character shorter but exactly as unreadable at a glance as the byte-flag WIF format already is; a dedicated
-  character costs one symbol to make the status actually visible without decoding.
+* WIF compression status: which of the four options in "Network and compression status, measured against WIF" to
+  adopt. Leading spare bits (option 3) appear to beat WIF outright — same two-character readability, one character
+  cheaper than a dedicated symbol — but they consume the bits a padding CRC would otherwise use, and they put
+  meaningful bits at the front of a payload where codex32 conventionally pads at the end. Reviewers who consider that
+  deviation unacceptable should say so, in which case option 1 matches WIF rather than exceeding it.
 * Root-node HRP name: <code>mn</code> ("master node") or <code>rn</code> ("root node")? <code>rn</code> is
   unregistered in SLIP-0173 as of this writing; <code>mn</code> needs the same check.
 * Whether/how to specify folding origin info into a multisig descriptor's overall QR encoding at the Bitcoin Core
