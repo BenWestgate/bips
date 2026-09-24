@@ -1,7 +1,7 @@
 <pre>
   BIP: ?
   Layer: Applications
-  Title: Codex32 Encoding for Descriptor Key Expressions
+  Title: codex32 Encoding for Descriptor Key Expressions
   Authors: Ben Westgate <BenWestgate@protonmail.com>
   Status: Draft
   Type: Specification
@@ -30,7 +30,7 @@ codex32's guarantees and properties: a single mistyped character in an xpub or i
 fails opaquely or silently resolves to different, valid key material. Base58's checksum detects errors but cannot
 locate or correct them, and neither base58 nor hex can be split into shares.
 
-Codex32 supplies error detection, error correction and Shamir secret sharing for the same material, and, because an
+The codex32 format supplies error detection, error correction and Shamir secret sharing for the same material, and, because an
 uppercase codex32 string is drawn from QR's alphanumeric character set while base58 is not, it encodes an extended
 key to a QR symbol one version smaller than base58 does, despite being longer as text (see Rationale).
 
@@ -252,7 +252,7 @@ different address. Three things bound that risk, and one does not:
   already excludes <code>1</code>, <code>b</code>, <code>i</code> and <code>o</code> for confusability. This is the
   distinction worth protecting, since a network mistake is the one that is not recoverable.
 * Hamming distance ''between symbol values'' is not a meaningful safeguard here and should not be cited as one.
-  Codex32's code is over GF(32); it counts symbol errors, so a status character differing from another in one bit
+  The codex32 code is over GF(32); it counts symbol errors, so a status character differing from another in one bit
   and one differing in four bits are both simply one symbol error. Bit distance matters only for the bit-level
   detection described above, which is why the status values are not chosen to maximise it.
 
