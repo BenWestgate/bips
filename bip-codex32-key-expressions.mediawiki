@@ -221,90 +221,58 @@ review concludes the CRC is worth more than the character.
 payload's 4 spare bits, placed ahead of the scalar rather than after it, so that they land in the first payload
 character instead of being scattered through the last one.
 
-The scalar's most significant bit is duplicated into bit positions 0 and 3 of that first symbol, and 3 status bits
-occupy the remaining positions 1, 2 and 4. One bit of scalar therefore appears twice, and the other 255 bits fill the
-remaining 51 symbols exactly, so the duplication costs nothing. What it buys is that a status's two possible
-characters differ in two bit positions rather than one, which is what makes <code>k</code> and <code>l</code>
-reachable as a pair, since they differ in exactly those two bits.
+The first payload symbol holds the 4 status bits in positions 4 to 1 and the scalar's most significant bit in
+position 0, so the scalar stays contiguous: its remaining 255 bits fill the other 51 symbols exactly. Each status
+therefore has two possible first characters, differing only in that free scalar bit.
 
-It must be the scalar's own bit that is duplicated, not a parity bit of the payload. The first symbol has five
-positions; two hold the duplicate and three hold status, leaving 255 bits in the remaining symbols. A 256-bit scalar
-therefore has exactly one bit with nowhere else to go. Duplicating a parity bit instead would either push the scalar
-into a 53rd symbol, or force its last bit into one of the status positions, where it would vary the first character
-across four values per status instead of two and defeat the purpose. Widening status beyond three bits is likewise
-no help: the additional distance would be between symbol ''values'', and the code counts symbol errors, so a
-character differing in one bit and one differing in four are both a single error.
-
-Only 8 of the 32 possible first symbols are valid, being 4 statuses times the two values of the duplicated bit, so
-three quarters of corruptions landing in this symbol are rejected by the encoding before the checksum is consulted.
-The two copies must also agree, which is what raises that figure from a half.
+The status codes are chosen to maximise the distance ''between networks'', which is the confusion that cannot be
+recovered from. Compression confusion within one network is allowed to be closer, because deriving the other form is
+a two-possibility search the holder can always perform:
 
 {| class="wikitable"
-! Status !! First character !! WIF's leading character
+! Status !! Status bits !! First character !! WIF's leading character
 |-
-| mainnet, uncompressed || <code>5</code> or <code>a</code> || <code>5</code>
+| mainnet, uncompressed || <code>1010</code> || <code>5</code> or <code>4</code> || <code>5</code>
 |-
-| mainnet, compressed || <code>k</code> or <code>l</code> || <code>K</code> or <code>L</code>
+| mainnet, compressed || <code>1111</code> || <code>7</code> or <code>l</code> || <code>K</code> or <code>L</code>
 |-
-| testnet, uncompressed || <code>x</code> or <code>0</code> || <code>9</code>
+| testnet, uncompressed || <code>0001</code> || <code>z</code> or <code>r</code> || <code>9</code>
 |-
-| testnet, compressed || <code>z</code> or <code>t</code> || <code>c</code>
+| testnet, compressed || <code>0100</code> || <code>g</code> or <code>f</code> || <code>c</code>
 |}
 
-Mainnet reproduces WIF exactly: <code>5</code> for uncompressed, and both characters of the <code>K</code>/<code>L</code>
-pair for compressed. Testnet cannot, and this is not an oversight. Requiring <code>k</code> and <code>l</code> forces
-the duplicated bits to positions 0 and 3, and under that constraint <code>c</code> is unreachable: a first symbol is
-some value ''v'' plus 9 when the scalar bit is set, where ''v'' has bits 0 and 3 clear; <code>c</code> is 24, which
-has bit 3 set, so it would need ''v'' = 15, which has both bits set. Testnet therefore falls back on characters that
-carry their own meaning: <code>t</code> for testnet, and <code>x</code> or <code>0</code> for an uncompressed key.
+Every mainnet character is at Hamming distance 3 or more from every testnet character, so no single bit error, and no
+pair of them, can turn one network's indicator into the other's. Within a network the two statuses are 2 apart, which
+still means no single bit flip crosses them. Mainnet keeps WIF's <code>5</code> for uncompressed and <code>L</code>
+for compressed; testnet's own characters are unreachable at this distance, and are given up deliberately.
 
-The first payload character alone always determines the network: the mainnet characters <code>5 a k l</code> and the
-testnet characters <code>0 t x z</code> share no value. This is '''not''' a distinguishing property of this
-assignment, and an earlier revision wrongly presented it as one. Each status occupies a distinct pair and pairs are
-disjoint by construction, so every assignment considered here separates the networks equally well. What this one buys
-over the others is only that mainnet reproduces WIF exactly.
+Only 8 of the 32 possible first symbols are valid, so three quarters of corruptions landing in this symbol are
+rejected by the encoding before the checksum is consulted.
 
-That ordering of priorities follows from which mistake is recoverable. Misreading compression yields a different
-address derived from the same scalar, so the funds are reachable by deriving the other form; there are only two
-possibilities to try, and segwit narrows it further, since P2WPKH requires a compressed key and so no uncompressed
-segwit address exists to mis-send to. Misreading the network is worse, and in both directions, because the damage is
-never in the derivation:
-
-* '''A mainnet key read as testnet''' is handled as worthless. It is pasted into faucets, block explorers, online
-  converters, logs and repositories, because that is what testnet keys are for. The exposure is created by the
-  mistake, and a key exposed that way is gone.
-* '''A testnet key read as mainnet''' is funded. The scalar controls the resulting address, so the funds are
-  recoverable in principle, but the key may already have been published, shared or committed precisely because it
-  was believed to be worthless. This mistake does not create the exposure; it converts an exposure that already
-  happened into a live theft, and anyone holding the old copy can sweep the funds.
-
-Network distinction therefore outranks compression distinction, and if one ever had to be sacrificed it would be
-compression.
-
-The two characters within each row occur with equal frequency, since the scalar's top
-bit is unbiased; for comparison, WIF's own <code>K</code>/<code>L</code> pair splits about 45/55, so a pair rather
-than a single character is what WIF already asks its users to read.
-
-====Runners-up====
-
-Two assignments were considered and are recorded because they trade differently, not because they are worse in every
-respect. Both place a single scalar bit rather than duplicating it, so neither can reach the <code>k</code>/<code>l</code>
-pair:
+====Alternatives considered====
 
 {| class="wikitable"
-! !! mainnet unc. !! mainnet cmp. !! testnet unc. !! testnet cmp. !! Trade
+! !! mainnet unc. !! mainnet cmp. !! testnet unc. !! testnet cmp. !! Cross-network distance !! Verdict
 |-
-| Recommended || <code>5</code> <code>a</code> || <code>k</code> <code>l</code> || <code>x</code> <code>0</code> || <code>z</code> <code>t</code> || Both mainnet characters exact; no testnet match
+| Specified above || <code>5</code> <code>4</code> || <code>7</code> <code>l</code> || <code>z</code> <code>r</code> || <code>g</code> <code>f</code> || '''3''' || WIF's <code>5</code> and <code>L</code>, no network confusable with another
 |-
-| Runner-up A || <code>3</code> <code>4</code> || <code>m</code> <code>l</code> || <code>6</code> <code>7</code> || <code>c</code> <code>u</code> || One character from each network; consecutive digit pairs; <code>m</code> for mainnet, <code>u</code> as a rotated <code>c</code>
+| Duplicated scalar bit || <code>5</code> <code>a</code> || <code>k</code> <code>l</code> || <code>x</code> <code>0</code> || <code>z</code> <code>t</code> || '''1''' || '''Rejected.''' Reaches both of WIF's <code>K</code> and <code>L</code>, but <code>k</code> and <code>x</code> are one bit apart across networks, as are <code>l</code> and <code>0</code>
 |-
-| Runner-up B || <code>2</code> <code>6</code> || <code>x</code> <code>k</code> || <code>9</code> <code>4</code> || <code>g</code> <code>c</code> || Three WIF characters, the most of any assignment; keeps the digit and letter split, but its pairs are neither consecutive nor adjacent
+| Digit and letter split || <code>3</code> <code>4</code> || <code>m</code> <code>l</code> || <code>6</code> <code>7</code> || <code>c</code> <code>u</code> || 1 || Uncompressed always a digit, compressed always a letter, but the same crossing weakness
+|-
+| Most WIF characters || <code>2</code> <code>6</code> || <code>x</code> <code>k</code> || <code>9</code> <code>4</code> || <code>g</code> <code>c</code> || 1 || Three WIF characters, the most of any assignment, at the same cost
 |}
 
-Both runners-up also happen to make every uncompressed status begin with a digit and every compressed one begin with
-a letter. That pattern holds in WIF too, across both networks, but it appears to be a consequence of appending the
-compression byte rather than a documented convention, and no source for it as an intended design has been found. It
-is noted as an observation, not relied on.
+The duplicated-scalar option was recommended in an earlier revision and is withdrawn. Duplicating the scalar's top
+bit into two positions is what makes <code>k</code> and <code>l</code> reachable as a pair, since those characters
+differ in exactly two bits; but constraining the codes that way leaves <code>k</code>, a mainnet indicator, one bit
+from <code>x</code>, a testnet one. A single bit error crosses the networks, which is the one failure this field
+exists to prevent, and it is not repaired by the surrounding checksum being strong: the whole point of a legible
+indicator is that a reader can trust it without decoding.
+
+Distance beyond 3 is not available at this width. Four status codes in four bits reach a minimum distance of 2 at
+best, and no partition into two networks exceeds 3 between the groups. Correcting rather than merely detecting a
+status error would need five status bits, which means a dedicated symbol and one more character; see Open questions.
 
 ===Cross-status ambiguity===
 
@@ -414,6 +382,17 @@ in that list: interpolation divides by the difference of two indices, so a repea
 implementation must reject outright, before any CRC is consulted.
 
 ==Rationale==
+
+'''<code>pk</code> and <code>pr</code> are one symbol apart, which is why the HRP must not be corrected.'''
+Expanding <code>pk</code> and <code>pr</code> for the checksum gives <code>[3,3,0,16,11]</code> and
+<code>[3,3,0,16,18]</code>: <code>k</code> and <code>r</code> share their high bits, so the pair differs in a single
+symbol of the codeword. The checksum detects that, but a decoder willing to repair the human-readable part could
+just as easily "repair" a private key into a public one. This is not an argument against the matched shape, which
+costs nothing here — an HRP substitution is detected whether or not the two payloads are the same length, because
+the HRP is inside the checksummed codeword, and length is a weaker signal than the HRP itself in any case. It is an
+argument for the rule already stated above: implementations MUST NOT correct the human-readable part. Every HRP pair
+in this document is one or two symbols apart, and <code>pk</code>/<code>pr</code>, <code>pk</code>/<code>pv</code>
+and <code>pk</code>/<code>sk</code> are all at one.
 
 '''Why <code>rn</code> for the root node?''' The choice matters more than it looks, because a 64-byte
 <code>ms</code> seed and an <code>rn</code> root node are both 127 characters with an expanded length of 129. The
