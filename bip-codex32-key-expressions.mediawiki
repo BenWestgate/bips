@@ -400,10 +400,24 @@ one-character slip between them is the worst confusion the format can offer. Thr
 weigh:
 
 The distance rule is measured against every Bitcoin HRP in use: <code>bc</code>, <code>tb</code>, <code>ms</code>,
-<code>cl</code>, <code>ln</code>, <code>sp</code>, and the others defined here. 279 two-letter HRPs clear it and are
-unseen in SLIP-0173, so the choice is a naming question, not a scarcity one. Note that '''no candidate ending in
-<code>k</code> can qualify''', since any such HRP differs from <code>pk</code> in one character; that rules out
-<code>sk</code>, <code>wk</code>, <code>dk</code>, <code>ek</code> and the rest of the obvious "key" names.
+<code>cl</code>, <code>ln</code>, <code>sp</code>, and the others defined here. Because a two-character HRP differs
+from another in one character whenever it shares either position, each live HRP eliminates its first letter from the
+first position and its second letter from the second. What remains is narrow:
+
+* A candidate's first letter cannot be <code>b</code>, <code>c</code>, <code>l</code>, <code>m</code>,
+  <code>p</code>, <code>s</code>, <code>t</code> or <code>x</code>.
+* Its second letter cannot be <code>b</code>, <code>c</code>, <code>k</code>, <code>l</code>, <code>n</code>,
+  <code>o</code>, <code>p</code> or <code>s</code>.
+
+That removes 352 of the 676 combinations, and it removes both families a reader would expect. No name beginning
+"private" or "secret" survives, since <code>p</code> and <code>s</code> are both gone from the first position; and no
+name ending in "key" survives, since <code>k</code> is gone from the second. The constraint is what drives the
+choices below, not a preference for obscurity.
+
+SLIP-0173 registration is not treated as a bar, since the registry already lists <code>pb</code> against two
+different chains, so duplicates are evidently tolerated. Allowing registered names adds only <code>dh</code>,
+<code>ex</code>, <code>ki</code> and <code>ue</code> to the surviving set, none of them useful here, so the question
+does not arise in practice.
 
 {| class="wikitable"
 ! HRP !! Reading !! Clears the rule? !! For and against
