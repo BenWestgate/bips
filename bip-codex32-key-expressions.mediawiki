@@ -61,9 +61,9 @@ left as zero padding.
 |-
 | <code>pr</code> || Private key, any network || 256 || 52 || 4 || network and compression status || 74
 |-
-| <code>xpub</code>/<code>tpub</code> || Extended public key || 588 || 118 || 2 || CRC-2 || 144
+| <code>xpub</code>/<code>tpub</code> || Extended public key || 585 || 117 || 0 || — || 143
 |-
-| <code>xprv</code>/<code>tprv</code> || Extended private key || 587 || 118 || 3 || CRC-3 || 144
+| <code>xprv</code>/<code>tprv</code> || Extended private key || 584 || 117 || 1 || parity || 143
 |-
 | <code>rn</code> || Root node: chain code and scalar || 512 || 103 || 3 || CRC-3, or unconstrained || 127
 |}
@@ -76,32 +76,81 @@ BIP-0032's <code>0x00</code> is safe to do: it changes the spare-bit count and n
 
 ===Extended key fields===
 
-BIP-0032's metadata fields are re-cut so that each one occupies a whole number of characters, leaving the chain code
-and key as the only fields that straddle character boundaries:
+BIP-0032's metadata is re-cut so that the fields a reader actually consults occupy whole characters, and the fields
+that look like noise are left to straddle boundaries. The child number is placed immediately after depth, ahead of
+the parent fingerprint, which is the reverse of BIP-0032's order:
 
 {| class="wikitable"
-! Field !! Bits !! Characters !! Notes
+! Field !! Bits !! Characters !! Contents
 |-
-| Depth || 5 || 1 || Values 0 to 31; an extended key deeper than 31 cannot be encoded
+| Depth || 5 || 1 || Values 0 to 31
 |-
-| Parent fingerprint || 35 || 7 || The 32-bit fingerprint, preceded by 3 bits that MUST be zero
+| Child number || 35 || 7 || Hardened flag, then 2 bits that MUST be zero, then the 31-bit index
 |-
-| Child number || 35 || 7 || The 32-bit child number, preceded by 3 bits that MUST be zero
+| Parent fingerprint || 32 || — || The 32-bit fingerprint, unpadded
 |-
-| Chain code || 256 || — || Begins on a character boundary at character 16
+| Chain code || 256 || — || Begins at bit 72 in both the public and private forms
 |-
 | Key || 257 or 256 || — || <code>serP(K)</code> as 257 bits, or the scalar as 256
 |}
 
-The first fifteen characters are therefore readable as three distinct fields rather than as one run of noise, and a
-master key, whose depth, parent fingerprint and child number are all zero, begins with fifteen <code>q</code>
-characters. The derivation index of a child key can be read directly out of characters 9 to 15 without decoding.
+An extended public key is 585 bits, exactly 117 symbols, with no spare bits; an extended private key is 584 bits,
+the same 117 symbols, with one spare bit at the end of the payload carrying a parity of the rest. Both are 143
+characters, and the chain code begins at the same bit offset in each, so a reader or an implementation can locate it
+without first knowing which of the two it holds.
 
-Padding the fingerprint to 35 bits rather than truncating it to 30 is deliberate. Truncation would fit the field into
-6 characters and save a character overall, but the parent fingerprint is matched against key origin information in
-descriptors and PSBTs, so discarding two of its bits makes the conversion back to a base58 extended key impossible to
-perform correctly. Depth is the one field that is genuinely narrowed rather than padded, and is restricted rather
-than truncated: a key with depth above 31 is not representable, which no practical derivation path approaches.
+The first eight characters are readable: one for depth, seven for the child number. A master key, whose depth and
+child number are both zero, opens with eight <code>q</code> characters and continues with more while its all-zero
+fingerprint runs out, so the leading run breaks as soon as any of that metadata is non-zero. Splitting the child
+number as hardened-flag, padding, index rather than right-aligning the whole 32 bits places the hardened flag at the
+top of its own character, which makes it legible on its own:
+
+{| class="wikitable"
+! Child number !! Characters !! Right-aligned instead !! Left-aligned instead
+|-
+| unhardened, index 0 || <code>qqqqqqq</code> || <code>qqqqqqq</code> || <code>qqqqqqq</code>
+|-
+| hardened, index 0 || <code>sqqqqqq</code> || <code>zqqqqqq</code> || <code>sqqqqqq</code>
+|-
+| unhardened, index 1 || <code>qqqqqqp</code> || <code>qqqqqqp</code> || <code>qqqqqqg</code>
+|-
+| hardened, index 1 || <code>sqqqqqp</code> || <code>zqqqqqp</code> || <code>sqqqqqg</code>
+|}
+
+Only the split placement yields both indicators. Right-aligning the full 32 bits puts the hardened flag one position
+lower, giving <code>z</code>, which signifies nothing; left-aligning preserves <code>s</code> but shifts the index so
+that index 1 reads <code>g</code> and larger indices spill across two characters. The two characters this produces
+are ones a bech32 user already reads: <code>q</code> and <code>p</code> are the witness versions distinguishing
+bech32 from bech32m, and <code>s</code> is codex32's own secret index.
+
+The 2 zero bits inside the child number are what buy that readability, and this document specifies them as zero
+rather than as a CRC. A CRC placed before the index would mix into the hardened flag's character and destroy the
+<code>q</code>/<code>s</code> distinction; placed after the index it would mix into the low-order character, which is
+exactly where small indices live, so common indices would no longer read as themselves. The detection it would add is
+small: the codex32 checksum already detects any single-character error, and 2 further bits mainly reduce the chance
+of a false correction being accepted, by a factor of four. A CRC that does not collide with either indicator costs a
+further character; see Open questions.
+
+The chain code is deliberately left to begin mid-character, at bit 72. Aligning it would cost a character and buy
+nothing, since alignment serves reading and a chain code is indistinguishable from noise. For the same reason the
+unpadded fingerprint sits directly against it: the two high-entropy fields are adjacent, and the readable fields are
+contiguous at the front.
+
+====Alternatives considered====
+
+'''BIP-0032's field order, at 143 characters.''' Keeping fingerprint before child number can also reach 143
+characters with the child number aligned, but only by narrowing depth to 3 bits. At that width depth stops being
+aligned, because the fingerprint's first two bits share the opening character with it. That trades a depth ceiling of
+7 for the loss of the field most worth reading, so this document uses the swapped order, which aligns both at a depth
+ceiling of 31.
+
+'''142 characters.''' Reachable only by narrowing depth to 3 bits ''and'' abandoning alignment entirely: 3 + 32 + 32
++ 513 is 580 bits, exactly 116 symbols. The result has no readable fields, no spare bits, and a depth ceiling of 7,
+against real paths that already reach depth 6. One character is not worth it.
+
+'''Padding the fingerprint as well, at 144 characters.''' Aligning all three metadata fields costs one character and
+yields 2 spare bits that a CRC could use without colliding with either indicator. This is the option to take if
+review concludes the CRC is worth more than the character.
 
 ===Private keys===
 
@@ -240,7 +289,7 @@ character, where byte mode costs 8. Measured with a QR encoder rather than estim
 {| class="wikitable"
 ! Key material !! This document !! QR version !! Existing format !! QR version
 |-
-| Extended key || 144 characters || 5 || 111 base58 characters || 6
+| Extended key || 143 characters || 5 || 111 base58 characters || 6
 |-
 | Public key, compressed || 74 characters || 3 || 66 hex characters || 4 lowercase, 3 uppercase
 |-
