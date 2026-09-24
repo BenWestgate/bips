@@ -175,11 +175,23 @@ review concludes the CRC is worth more than the character.
 payload's 4 spare bits, placed ahead of the scalar rather than after it, so that they land in the first payload
 character instead of being scattered through the last one.
 
-The scalar's most significant bit is duplicated into bit positions 0 and 3 of that first symbol, and the 4 status
-bits occupy the remaining three positions together with the copies. One bit of scalar therefore appears twice, which
-costs nothing — the remaining 51 symbols hold the other 255 bits exactly — and lets the two possible first characters
-for a status differ in two bit positions rather than one. That is what makes <code>k</code> and <code>l</code>
+The scalar's most significant bit is duplicated into bit positions 0 and 3 of that first symbol, and 3 status bits
+occupy the remaining positions 1, 2 and 4. One bit of scalar therefore appears twice, and the other 255 bits fill the
+remaining 51 symbols exactly, so the duplication costs nothing. What it buys is that a status's two possible
+characters differ in two bit positions rather than one, which is what makes <code>k</code> and <code>l</code>
 reachable as a pair, since they differ in exactly those two bits.
+
+It must be the scalar's own bit that is duplicated, not a parity bit of the payload. The first symbol has five
+positions; two hold the duplicate and three hold status, leaving 255 bits in the remaining symbols. A 256-bit scalar
+therefore has exactly one bit with nowhere else to go. Duplicating a parity bit instead would either push the scalar
+into a 53rd symbol, or force its last bit into one of the status positions, where it would vary the first character
+across four values per status instead of two and defeat the purpose. Widening status beyond three bits is likewise
+no help: the additional distance would be between symbol ''values'', and the code counts symbol errors, so a
+character differing in one bit and one differing in four are both a single error.
+
+Only 8 of the 32 possible first symbols are valid, being 4 statuses times the two values of the duplicated bit, so
+three quarters of corruptions landing in this symbol are rejected by the encoding before the checksum is consulted.
+The two copies must also agree, which is what raises that figure from a half.
 
 {| class="wikitable"
 ! Status !! First character !! WIF's leading character
@@ -200,20 +212,30 @@ some value ''v'' plus 9 when the scalar bit is set, where ''v'' has bits 0 and 3
 has bit 3 set, so it would need ''v'' = 15, which has both bits set. Testnet therefore falls back on characters that
 carry their own meaning: <code>t</code> for testnet, and <code>x</code> or <code>0</code> for an uncompressed key.
 
-The property this buys is worth more than the missing testnet characters. '''The mainnet characters
-<code>5 a k l</code> and the testnet characters <code>0 t x z</code> are disjoint''', so the first payload character
-alone always determines the network, with no value shared between them.
+The first payload character alone always determines the network: the mainnet characters <code>5 a k l</code> and the
+testnet characters <code>0 t x z</code> share no value. This is '''not''' a distinguishing property of this
+assignment, and an earlier revision wrongly presented it as one. Each status occupies a distinct pair and pairs are
+disjoint by construction, so every assignment considered here separates the networks equally well. What this one buys
+over the others is only that mainnet reproduces WIF exactly.
 
 That ordering of priorities follows from which mistake is recoverable. Misreading compression yields a different
 address derived from the same scalar, so the funds are reachable by deriving the other form; there are only two
 possibilities to try, and segwit narrows it further, since P2WPKH requires a compressed key and so no uncompressed
-segwit address exists to mis-send to. Misreading the network is worse, and the damage is not in the derivation: a
-key believed to be testnet gets handled as worthless, pasted into faucets, explorers, online converters, logs and
-repositories. A mainnet key handled that way is gone, with no recovery. Network distinction therefore outranks
-compression distinction, and if one ever had to be sacrificed it would be compression.
+segwit address exists to mis-send to. Misreading the network is worse, and in both directions, because the damage is
+never in the derivation:
 
-Twelve of the sixteen status values are unused, so corruption confined to these bits is caught by the encoding itself
-and not only by the checksum. The two characters within each row occur with equal frequency, since the scalar's top
+* '''A mainnet key read as testnet''' is handled as worthless. It is pasted into faucets, block explorers, online
+  converters, logs and repositories, because that is what testnet keys are for. The exposure is created by the
+  mistake, and a key exposed that way is gone.
+* '''A testnet key read as mainnet''' is funded. The scalar controls the resulting address, so the funds are
+  recoverable in principle, but the key may already have been published, shared or committed precisely because it
+  was believed to be worthless. This mistake does not create the exposure; it converts an exposure that already
+  happened into a live theft, and anyone holding the old copy can sweep the funds.
+
+Network distinction therefore outranks compression distinction, and if one ever had to be sacrificed it would be
+compression.
+
+The two characters within each row occur with equal frequency, since the scalar's top
 bit is unbiased; for comparison, WIF's own <code>K</code>/<code>L</code> pair splits about 45/55, so a pair rather
 than a single character is what WIF already asks its users to read.
 
@@ -230,7 +252,7 @@ pair:
 |-
 | Runner-up A || <code>3</code> <code>4</code> || <code>m</code> <code>l</code> || <code>6</code> <code>7</code> || <code>c</code> <code>u</code> || One character from each network; consecutive digit pairs; <code>m</code> for mainnet, <code>u</code> as a rotated <code>c</code>
 |-
-| Runner-up B || <code>2</code> <code>6</code> || <code>x</code> <code>k</code> || <code>9</code> <code>4</code> || <code>g</code> <code>c</code> || Three WIF characters, the most of any assignment, but no pairing or ordering logic
+| Runner-up B || <code>2</code> <code>6</code> || <code>x</code> <code>k</code> || <code>9</code> <code>4</code> || <code>g</code> <code>c</code> || Three WIF characters, the most of any assignment; keeps the digit and letter split, but its pairs are neither consecutive nor adjacent
 |}
 
 Both runners-up also happen to make every uncompressed status begin with a digit and every compressed one begin with
@@ -245,8 +267,8 @@ different address. Three things bound that risk, and one does not:
 
 * Any single-character substitution anywhere in a codex32 string, including in the status character, invalidates the
   checksum. A misread status is detected, not silently accepted.
-* Twelve of the sixteen status bit patterns are unused, so a corruption landing in the status bits alone is caught
-  even before the checksum is consulted.
+* Only 8 of the 32 possible first symbols are valid, so three quarters of corruptions landing there are caught
+  before the checksum is consulted.
 * Network is legible from the character alone, because the mainnet and testnet character sets are disjoint. A
   reader who recalls nothing else about the format cannot mistake one network for the other, and the bech32 alphabet
   already excludes <code>1</code>, <code>b</code>, <code>i</code> and <code>o</code> for confusability. This is the
