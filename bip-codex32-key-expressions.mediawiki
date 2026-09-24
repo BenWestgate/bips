@@ -99,7 +99,7 @@ introduces no new checksum: it is the existing codex32 padding rule at the width
 |-
 | <code>xo</code> || X-only public key (BIP-0340) || 256 || 52 || 4 || CRC-4 || 74
 |-
-| <code>se</code> || Private key, any network || 256 || 52 || 4 || network and compression status || 74
+| <code>wf</code> || Private key, any network || 256 || 52 || 4 || network and compression status || 74
 |-
 | <code>xpub</code>/<code>tpub</code> || Extended public key || 585 || 117 || 0 || — || 143
 |-
@@ -108,7 +108,7 @@ introduces no new checksum: it is the existing codex32 padding rule at the width
 | <code>nr</code> || Node root: chain code and scalar || 512 || 103 || 3 || CRC-3, or unconstrained || 127
 |}
 
-A compressed <code>pk</code>, an <code>xo</code> and a <code>se</code> are all 74 characters with a 2-character HRP
+A compressed <code>pk</code>, an <code>xo</code> and a <code>wf</code> are all 74 characters with a 2-character HRP
 and a 52-symbol payload, matching <code>cl</code> and a 256-bit <code>ms</code> seed. Key material that is
 interchangeable inside a script therefore has an interchangeable shape, so an implementation can assume one length.
 An extended public and an extended private key are likewise the same length as each other, which is why dropping
@@ -216,7 +216,7 @@ review concludes the CRC is worth more than the character.
 
 ===Private keys===
 
-<code>se</code> is a single HRP for every network, as <code>pk</code> is. Network and compression status live in the
+<code>wf</code> is a single HRP for every network, as <code>pk</code> is. Network and compression status live in the
 payload's 4 spare bits, placed ahead of the scalar rather than after it, so that they land in the first payload
 character instead of being scattered through the last one.
 
@@ -363,7 +363,7 @@ Where the payload ''is'' the secret, the procedure is meaningful and permitted:
 |-
 | <code>nr</code> with CRC-3 || Yes || 3 bits must match || 8
 |-
-| <code>se</code> || Yes || 4 status bits must be one of 4 valid patterns || 4
+| <code>wf</code> || Yes || 4 status bits must be one of 4 valid patterns || 4
 |-
 | <code>xprv</code>/<code>tprv</code> || In principle || Depth, parent fingerprint and child number must all be zero || about 2<sup>72</sup>
 |-
@@ -399,14 +399,22 @@ than any other: <code>pk</code> is publishable and the private HRP is the one th
 one-character slip between them is the worst confusion the format can offer. Three candidates, for reviewers to
 weigh:
 
+The distance rule is measured against every Bitcoin HRP in use: <code>bc</code>, <code>tb</code>, <code>ms</code>,
+<code>cl</code>, <code>ln</code>, <code>sp</code>, and the others defined here. 279 two-letter HRPs clear it and are
+unseen in SLIP-0173, so the choice is a naming question, not a scarcity one. Note that '''no candidate ending in
+<code>k</code> can qualify''', since any such HRP differs from <code>pk</code> in one character; that rules out
+<code>sk</code>, <code>wk</code>, <code>dk</code>, <code>ek</code> and the rest of the obvious "key" names.
+
 {| class="wikitable"
-! HRP !! Reading !! Distance from <code>pk</code> !! Notes
+! HRP !! Reading !! Clears the rule? !! For and against
 |-
-| <code>se</code> || secret || 2 || "Secret key" is the term BIP-0340 and BIP-0327 use throughout, and libsecp256k1's API says <code>seckey</code>, so this is Bitcoin's own vocabulary rather than a coinage. It also contradicts a misreading of <code>pk</code> as "private key" instead of merely failing to correct it.
+| <code>wf</code> || WIF, without the letter the data alphabet excludes || '''Yes''' || Recognisable to anyone who knows the format it replaces. Says nothing about secrecy, so a reader who has misread <code>pk</code> as "private key" is left to guess that <code>wf</code> is the public one. The only shortlisted name that clears the rule.
 |-
-| <code>wf</code> || WIF, without the letter the data alphabet excludes || 2 || Immediately recognisable to anyone who knows the format it replaces, but it says nothing about secrecy, so a reader who has already misread <code>pk</code> as "private key" is left to conclude <code>wf</code> is the public one.
+| <code>se</code> || secret || No — one from <code>sp</code> || "Secret key" is the term BIP-0340 and BIP-0327 use throughout and libsecp256k1's API says <code>seckey</code>, so it is Bitcoin's own vocabulary, and it contradicts a misreading of <code>pk</code> rather than merely failing to correct it. Disqualified only by silent payments.
 |-
-| <code>pr</code> || private || '''1''' || Pairs with <code>pk</code> and reads well beside it, and that is the whole of its case. It would be the only Bitcoin HRP differing from another in one character rather than two, and the pair it breaks with is the one where confusion is fatal.
+| <code>sv</code>, <code>sd</code> || secret value, secret data || No — one from <code>sp</code> || Same merits and the same disqualification as <code>se</code>.
+|-
+| <code>pr</code> || private || No — one from <code>pk</code> and <code>nr</code> || Pairs with <code>pk</code> and reads well beside it, which is the whole of its case. It breaks the rule on the pair where confusion is fatal.
 |}
 
 '''Prior art.''' [https://lists.linuxfoundation.org/pipermail/bitcoin-dev/2018-May/016038.html Bech32X], proposed by
@@ -437,6 +445,15 @@ argument for the rule already stated above: implementations MUST NOT correct the
 in this document is one or two symbols apart, and <code>pk</code>/<code>pr</code>, <code>pk</code>/<code>pv</code>
 and <code>pk</code>/<code>sk</code> are all at one.
 
+'''Root-node candidates.''' Measured against the same set, the names that clear the rule are <code>nr</code>
+("node root"), <code>nx</code> ("node extended"), <code>nd</code> ("node"), <code>rt</code> ("root") and
+<code>hd</code> ("hierarchical deterministic"). <code>nr</code> is specified because it is the only one carrying both
+senses at once; <code>hd</code> is the weakest, describing any key in the hierarchy rather than its head, and
+<code>nx</code>, <code>nd</code> and <code>rt</code> each carry one sense. Ruled out by distance: <code>rn</code> and
+<code>mn</code> (one from <code>ln</code>, and <code>mn</code> also one from <code>ms</code>), <code>cc</code> for
+"chain code" (one from both <code>bc</code> and <code>cl</code>), <code>rk</code> (one from <code>pk</code>) and
+Bech32X's own <code>xp</code> (one from <code>sp</code> and <code>xo</code>).
+
 '''Why not <code>rn</code>?''' "Root node" reads better, and its resemblance to <code>m</code>, which is what
 BIP-0032 calls the master node, is apt. It is dropped anyway because it differs from Lightning's <code>ln</code> in
 one character, and the consequence is not mild. An <code>nr</code> payload is a chain code and a master private key;
@@ -458,9 +475,8 @@ are already registered in SLIP-0173, and <code>cc</code> for "chain code" is one
 '''Why one HRP for private keys instead of <code>wif</code> and <code>twif</code>?''' A 4-character <code>twif</code>
 would have the same shape as <code>tpub</code> and <code>tprv</code> while holding something entirely different, which
 works against letting implementations infer length from the HRP. <code>pk</code> already covers every network with one
-HRP. <code>se</code> keeps that shape at two characters while differing from <code>pk</code> in both of them; see
-"Choosing the private-key HRP" above for why the pairing <code>pr</code> would have given up is not worth one
-character of distance. It is unregistered in SLIP-0173.
+HRP. <code>wf</code> keeps that shape at two characters while differing from <code>pk</code> in both of them; see
+"Choosing the private-key HRP" below for the candidates considered. It is unregistered in SLIP-0173.
 
 '''Why not a dedicated status character?''' Spending a 53rd payload symbol would make the first character fully
 determined, so the four statuses could be exactly <code>5</code>, <code>k</code>, <code>9</code> and <code>c</code>,
@@ -524,7 +540,7 @@ be won here: WIF at 52 characters sits one byte under version 3's 53-byte capaci
 
 ===What the human-readable part discloses===
 
-The HRP names the kind of material it protects, so a <code>se</code> or <code>xprv</code> string announces itself as
+The HRP names the kind of material it protects, so a <code>wf</code> or <code>xprv</code> string announces itself as
 a private key while <code>pk</code> or <code>xo</code> announces a public one. Someone who finds a collection of
 cards can prioritise accordingly, which a set of BIP-0093 <code>ms</code> shares never permitted, since every one of
 those looks alike.
@@ -540,7 +556,7 @@ strings themselves.
 There is no version field. The HRP is the version: an incompatible change to any payload layout takes a new HRP, and
 a decoder that does not recognise an HRP declines to decode rather than guessing. Reordering these fields is not a
 foreseeable reason to do that, since they are BIP-0032's own and fixed by it; the realistic triggers are parameter
-changes, such as widening depth beyond 5 bits, altering a CRC width, or reassigning the <code>se</code> status
+changes, such as widening depth beyond 5 bits, altering a CRC width, or reassigning the <code>wf</code> status
 values. Implementations MUST NOT attempt to decode an unrecognised HRP under a known layout.
 
 ==Backwards compatibility==
@@ -583,7 +599,7 @@ ordinary QR, and every compliant reader decodes it identically, so nothing is re
 
 To be written. They are required before this document can be considered complete, and are deferred only until the
 payload layouts stop moving, since every vector would otherwise need recomputing. They must cover, for each profile:
-the bit packing of a known key, the CRC or parity value, the <code>se</code> status characters for all four
+the bit packing of a known key, the CRC or parity value, the <code>wf</code> status characters for all four
 network and compression combinations, an extended key at depth zero and one at depth greater than zero with a
 hardened child number, each defined derivation suffix, and invalid cases for a wrong CRC, a reserved suffix value and
 an unrecognised HRP.
