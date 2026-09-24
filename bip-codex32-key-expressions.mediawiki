@@ -67,8 +67,24 @@ BIP-0173 orders its alphabet: the characters people actually confuse are placed 
 A CRC whose polynomial has at least two terms detects every single-bit error, so it catches a misread character with
 certainty rather than at the 1 - 2<sup>-''n''</sup> rate a random substitution would suggest. Measured over random
 payloads, CRC-3 catches 100% of one-bit character substitutions and 90.3% of substitutions overall, against 87.5% by
-chance; CRC-4 catches 100% and 96.8% against 93.8%. The requirement on the polynomial is therefore only that it have
-at least two terms, which the BIP-0093 choice satisfies; substituting another that also satisfies it gains nothing.
+chance; CRC-4 catches 100% and 96.8% against 93.8%.
+
+The covered bits are every payload bit preceding the spare bits, and covering fewer would be worse rather than
+cheaper. A bit outside the CRC's input gets no protection from it at all, while the objection to a long input — that
+a degree-''n'' CRC only guarantees detecting 2-bit errors closer together than its period — does not apply to the
+errors that matter: two flipped bits within one character are at most 4 apart, and both periods here are longer than
+that, so every 2-bit error inside a character is caught regardless of how long the payload is. Shortening the input
+would not recover the distant 2-bit errors, it would merely stop covering them.
+
+The polynomial is also the best available at these widths, which is worth stating so it is not changed casually. A
+wrong character is a 5-bit pattern, and the CRC misses it exactly when the polynomial divides that pattern, so what
+matters is the weight of the patterns it misses. At width 3 every polynomial misses three of the 31 patterns:
+<code>x^3 + x + 1</code> misses weights 3, 3 and 4, while the reducible <code>x^3 + x^2 + x + 1</code> misses a weight-2
+pattern, which is strictly worse because lighter errors are likelier. At width 4 every polynomial misses exactly one
+pattern; <code>x^4 + x + 1</code> misses a weight-3 one. The alternative <code>x^4 + x^3 + x^2 + x + 1</code> misses
+only the weight-5 pattern, every bit of the character flipped, which is rarer still, but its period is 5, so it
+stops detecting 2-bit errors at the same bit position in different characters. This document keeps the BIP-0093
+choice: it is optimal at width 3, near-optimal at width 4, and primitive at both, and reusing it costs nothing.
 Its parameters are: the remainder of the payload's preceding bits, taken most significant
 bit first, modulo the generator polynomial <code>x^n + x + 1</code> for ''n'' of 3 or 4 and <code>x^2 + x + 1</code>
 for ''n'' of 2, with a zero initial value and no final inversion. A parity bit is the same construction at width 1,
@@ -315,9 +331,13 @@ same reason BIP-0093 says implementations should not correct the human-readable 
 
 ===Identifier===
 
-The codex32 identifier MUST NOT be derived from the key material, for any profile in this document. An earlier
-revision offered the first 20 bits of the BIP-0032 fingerprint as a default for <code>xo</code>; that default is
-withdrawn, and the analysis below is why.
+No default identifier may be derived from the payload, for any profile in this document. This is a general rule
+rather than a list of bad cases: an identifier computed from the secret is a function of the thing the sharing is
+meant to protect, so it travels with every share and can be recomputed by anyone who later learns the key. The
+BIP-0032 fingerprint is the alluring instance, since it is already short and already attached to the key, and it
+leaks in every profile once the corresponding public key becomes visible on chain. An earlier revision offered its
+first 20 bits as a default for <code>xo</code>; that default is withdrawn, and the per-profile analysis below shows
+why no exception survived.
 
 What secret sharing protects for public key material is not the secrecy of the key, which is meant to become known,
 but the unlinkability of one recovered share to a particular wallet's on-chain history. A single share found on its
@@ -346,9 +366,13 @@ exists to avoid, and it discards the one field able to say something useful abou
 
 ===Generation from fresh shares===
 
-BIP-0093's procedure for generating a fresh secret by choosing share payloads freely produces a secret nobody chose
-and nobody knew in advance. That is exactly what is wanted for a seed. For most profiles here it is not wanted at
-all, and the reason is not cost:
+Splitting a key that already exists needs nothing special and is available for every profile here. The secret is
+encoded first, with its CRC or status bits set correctly, and then k-1 shares are drawn at random to mask it; the
+remaining shares follow. Every constraint on the payload is satisfied by construction, and no retries occur.
+
+The procedure below is the other one: BIP-0093's method of generating a fresh secret by choosing share payloads
+freely, so that the secret emerges rather than being chosen. That is what a seed wants. For most profiles here it is
+not wanted at all, and the reason is not cost:
 
 '''A freely generated public key is useless.''' Interpolating random shares to a <code>pk</code>, <code>xo</code>,
 <code>xpub</code> or <code>tpub</code> yields a point on the curve whose discrete logarithm nobody knows. No one can
@@ -377,15 +401,31 @@ key, so its metadata must be zero, which a drawn payload essentially never satis
 same secret material without the metadata, so it is the profile to use for a fresh root; <code>xprv</code> is for
 keys that already exist.
 
-Note that a CRC constrains the recovered secret and not the individual shares. The set of CRC-valid payloads is a
+Note that a CRC constrains the recovered secret and not the individual shares. This is why it costs nothing when a
+key is split rather than generated: the constraint is satisfied once, on the secret, before any share exists. The set of CRC-valid payloads is a
 subspace over GF(2) but not over GF(32), and share interpolation multiplies symbols by GF(32) coefficients, so the
 shares of a CRC-valid secret do not themselves satisfy the CRC; measured on random payloads, a scaled payload
 remains CRC-valid only at the chance rate. This is why the counts above apply to the interpolated result rather than
 to each draw, and it is also where the CRC earns its place: it will not catch a corrupted share, which the checksum
-already does, but it will catch a recovery performed with the wrong shares, a repeated index, or shares from a
-different set, none of which the checksum notices.
+already does, but it will catch a recovery performed with the wrong shares, with too few of them, or with shares
+belonging to a different set, none of which the checksum notices, because each of those produces a well-formed
+string carrying the wrong secret. It is a recovery check rather than an error check. A repeated share index is not
+in that list: interpolation divides by the difference of two indices, so a repeat is a degenerate input that an
+implementation must reject outright, before any CRC is consulted.
 
 ==Rationale==
+
+'''Why <code>rn</code> for the root node?''' The choice matters more than it looks, because a 64-byte
+<code>ms</code> seed and an <code>rn</code> root node are both 127 characters with an expanded length of 129. The
+HRP is the only thing telling them apart, so confusing the two costs more here than elsewhere. <code>mn</code> for
+"master node" matches BIP-0032's own vocabulary, but it is one substitution from <code>ms</code>, the most widely
+deployed codex32 HRP, on strings of identical length; <code>rn</code> is two substitutions from both
+<code>ms</code> and <code>cl</code>. That <code>rn</code> resembles <code>m</code> in many typefaces is a benefit
+rather than a hazard: <code>m</code> is exactly what BIP-0032 calls the master node at the head of a derivation
+path, so the resemblance points at the right object. Of the unregistered two-character alternatives at the same
+distance — <code>rt</code>, <code>nd</code>, <code>hd</code>, <code>nr</code> — none carries both the "root" and
+"node" senses, and <code>hd</code> describes any key in the hierarchy rather than its head. <code>mk</code> and
+<code>rs</code> are already registered in SLIP-0173.
 
 '''Why one HRP for private keys instead of <code>wif</code> and <code>twif</code>?''' A 4-character <code>twif</code>
 would have the same shape as <code>tpub</code> and <code>tprv</code> while holding something entirely different, which
