@@ -397,6 +397,25 @@ implementation must reject outright, before any CRC is consulted.
 
 ==Rationale==
 
+'''Why <code>pk</code> and not <code>pub</code>?''' Every descriptor function that means "public key" already spells
+it this way — <code>pk()</code>, <code>pkh()</code>, <code>wpkh()</code>, <code>pk_k()</code>, <code>pk_h()</code> —
+so inside the language these strings feed, <code>pk</code> is the established spelling and <code>pub</code> is not.
+It is shorter, which BIP-0093 treats as a virtue in its own right. It does read like "private key" to someone who
+has not met descriptors, and Bech32X published it meaning exactly that, which is why the private-key HRP is chosen
+below to be unlike it rather than to pair with it.
+
+'''Why no network-tagged public keys?''' BIP-0380's hex public keys carry no network, deliberately: the key material
+is the same on both, and the network is a property of the address or script built from it, not of the key. Adding
+<code>tpk</code> and <code>txo</code> would invent a distinction the descriptor language does not make, and force
+every consumer to handle two spellings of one object. A <code>tpk</code>-shaped HRP is separately unavailable, being
+registered in SLIP-0173 to PKT. Only private keys carry a network here, and only because WIF already does and
+because mistaking one network for the other is unrecoverable in a way it is not for a public key.
+
+'''Why keep uncompressed public keys at all?''' They are legacy, and the 128-character encoding is the longest thing
+this document defines. BIP-0380 still permits them in <code>pk()</code>, <code>pkh()</code> and <code>combo()</code>,
+and the paper wallets that hold them are exactly the material a paper backup format attracts, so dropping them would
+refuse the keys most in need of a durable backup.
+
 '''Choosing the private-key HRP.''' Every lowercase letter shares the same high three bits and has a distinct low
 five, so for a two-character lowercase HRP the distance in the checksummed codeword is simply the number of
 differing characters. Every pair among the Bitcoin HRPs in use — <code>bc</code>, <code>tb</code>, <code>ms</code>,
@@ -404,8 +423,7 @@ differing characters. Every pair among the Bitcoin HRPs in use — <code>bc</cod
 from <code>pk</code> therefore requires differing in ''both'' characters, which rules out <code>pr</code>,
 <code>pv</code>, <code>sk</code> and every other option that keeps a letter. The stakes are higher for this pair
 than any other: <code>pk</code> is publishable and the private HRP is the one thing that must never be, so a
-one-character slip between them is the worst confusion the format can offer. Three candidates, for reviewers to
-weigh:
+one-character slip between them is the worst confusion the format can offer.
 
 The distance rule is measured against every Bitcoin HRP in use: <code>bc</code>, <code>tb</code>, <code>ms</code>,
 <code>cl</code>, <code>ln</code>, <code>sp</code>, and the others defined here. Because a two-character HRP differs
