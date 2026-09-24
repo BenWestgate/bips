@@ -186,6 +186,12 @@ Encoders MUST NOT approximate one suffix with another.
 Suffix <code>000</code> leaves the first character of the field reading as before, so a bare key and a master key are
 unaffected; a suffixed key changes it, which is correct, since it is no longer the same object.
 
+These 3 bits are not human-readable, so they are not a replacement for writing the suffix out. Implementations MAY
+continue to carry the suffix alongside the string in its BIP-0380 form, and SHOULD do so wherever a person has to
+read it. The encoded copy then serves as a correction oracle for the written one: the checksum covers the bits, so a
+suffix that has been mistranscribed or lost can be recovered from the string rather than guessed at, which is
+exactly the failure the rest of this document exists to address.
+
 The remaining bits inside the child number are specified as fixed values rather than as a CRC. A CRC placed before the index would mix into the hardened flag's character and destroy the
 <code>q</code>/<code>s</code> distinction; placed after the index it would mix into the low-order character, which is
 exactly where small indices live, so common indices would no longer read as themselves. The detection it would add is
@@ -335,8 +341,10 @@ observer already holds:
 Identifiers SHOULD be chosen as BIP-0093 already suggests, from something the holder can reconstruct that is not the
 key. For a multisignature wallet, each cosigner's key SHOULD carry its own identifier naming ''that cosigner'', so
 that a collection of strings shows at a glance whose key each one is. Implementations SHOULD NOT give every key in a
-set the same identifier: it would mark the strings as belonging together, which is the linkage the preceding analysis
-exists to avoid, and it discards the one field able to say something useful about a key a person is holding.
+set the same identifier. It would mark the strings as belonging together, which is the linkage the preceding
+analysis exists to avoid, and it discards the one field able to say something useful about a key a person is
+holding. The same reasoning BIP-0093 applies to master seeds and their re-share sets applies here: anything a holder
+may need to tell apart should carry an identifier that tells it apart.
 
 ===Generation from fresh shares===
 
@@ -573,13 +581,7 @@ foreseeable reason to do that, since they are BIP-0032's own and fixed by it; th
 changes, such as widening depth beyond 5 bits, altering a CRC width, or reassigning the <code>wf</code> status
 values. Implementations MUST NOT attempt to decode an unrecognised HRP under a known layout.
 
-==Backwards compatibility==
-
-These are new HRPs under the generalized-HRP codex32 grammar. Nothing changes for existing <code>ms</code> or
-<code>cl</code> strings, for BIP-0380 descriptors, or for WIF, hex and base58 serializations, which remain valid
-inputs wherever they are accepted today.
-
-===QR encoding===
+==QR encoding==
 
 Encoders SHOULD upper-case a codex32 string before encoding it. The alphabet is entirely within QR's alphanumeric
 character set, which costs 5.5 bits per character where byte mode costs 8, and the string is case-insensitive, so
@@ -592,6 +594,12 @@ one-character byte segment for each bracket and alphanumeric segments for everyt
 143-character extended key with a four-step origin this is 946 bits against 1308 for a single byte-mode segment, which
 is the difference between version 7 and version 8. Segmentation is an encoder-side choice: a multi-segment symbol is
 ordinary QR, and every compliant reader decodes it identically, so nothing is required of decoders.
+
+==Backwards compatibility==
+
+These are new HRPs under the generalized-HRP codex32 grammar. Nothing changes for existing <code>ms</code> or
+<code>cl</code> strings, for BIP-0380 descriptors, or for WIF, hex and base58 serializations, which remain valid
+inputs wherever they are accepted today.
 
 ==Open questions==
 
