@@ -170,31 +170,68 @@ review concludes the CRC is worth more than the character.
 payload's 4 spare bits, placed ahead of the scalar rather than after it, so that they land in the first payload
 character instead of being scattered through the last one.
 
-The first payload symbol is the scalar's most significant bit followed by the 4 status bits; the remaining 51 symbols
-are the scalar's other 255 bits, which is an exact fit. Because that leading scalar bit is free, each status has two
-possible first characters rather than one. The four status values are chosen so that '''an uncompressed key always
-begins with a digit and a compressed key always begins with a letter''':
+The scalar's most significant bit is duplicated into bit positions 0 and 3 of that first symbol, and the 4 status
+bits occupy the remaining three positions together with the copies. One bit of scalar therefore appears twice, which
+costs nothing — the remaining 51 symbols hold the other 255 bits exactly — and lets the two possible first characters
+for a status differ in two bit positions rather than one. That is what makes <code>k</code> and <code>l</code>
+reachable as a pair, since they differ in exactly those two bits.
 
 {| class="wikitable"
-! Status !! Status bits !! First character !! WIF's leading character
+! Status !! First character !! WIF's leading character
 |-
-| mainnet, uncompressed || <code>1010</code> || <code>2</code> or <code>6</code> || <code>5</code>
+| mainnet, uncompressed || <code>5</code> or <code>a</code> || <code>5</code>
 |-
-| mainnet, compressed || <code>0110</code> || <code>x</code> or <code>k</code> || <code>K</code> or <code>L</code>
+| mainnet, compressed || <code>k</code> or <code>l</code> || <code>K</code> or <code>L</code>
 |-
-| testnet, uncompressed || <code>0101</code> || <code>9</code> or <code>4</code> || <code>9</code>
+| testnet, uncompressed || <code>x</code> or <code>0</code> || <code>9</code>
 |-
-| testnet, compressed || <code>1000</code> || <code>g</code> or <code>c</code> || <code>c</code>
+| testnet, compressed || <code>z</code> or <code>t</code> || <code>c</code>
 |}
 
-Three of the four keep WIF's own leading character as one of their two options. The digit-and-letter split is only
-possible at all because the free scalar bit sits at the top of the symbol: of the five positions it could occupy,
-only two leave more than one pair of adjacent values that are both digits, and the bech32 alphabet contains just nine
-digits against twenty-three letters. Putting it anywhere else makes the convention unsatisfiable.
+Mainnet reproduces WIF exactly: <code>5</code> for uncompressed, and both characters of the <code>K</code>/<code>L</code>
+pair for compressed. Testnet cannot, and this is not an oversight. Requiring <code>k</code> and <code>l</code> forces
+the duplicated bits to positions 0 and 3, and under that constraint <code>c</code> is unreachable: a first symbol is
+some value ''v'' plus 9 when the scalar bit is set, where ''v'' has bits 0 and 3 clear; <code>c</code> is 24, which
+has bit 3 set, so it would need ''v'' = 15, which has both bits set. Testnet therefore falls back on characters that
+carry their own meaning: <code>t</code> for testnet, and <code>x</code> or <code>0</code> for an uncompressed key.
+
+The property this buys is worth more than the missing testnet characters. '''The mainnet characters
+<code>5 a k l</code> and the testnet characters <code>0 t x z</code> are disjoint''', so the first payload character
+alone always determines the network, with no value shared between them.
+
+That ordering of priorities follows from which mistake is recoverable. Misreading compression yields a different
+address derived from the same scalar, so the funds are reachable by deriving the other form; there are only two
+possibilities to try, and segwit narrows it further, since P2WPKH requires a compressed key and so no uncompressed
+segwit address exists to mis-send to. Misreading the network is worse, and the damage is not in the derivation: a
+key believed to be testnet gets handled as worthless, pasted into faucets, explorers, online converters, logs and
+repositories. A mainnet key handled that way is gone, with no recovery. Network distinction therefore outranks
+compression distinction, and if one ever had to be sacrificed it would be compression.
 
 Twelve of the sixteen status values are unused, so corruption confined to these bits is caught by the encoding itself
 and not only by the checksum. The two characters within each row occur with equal frequency, since the scalar's top
-bit is unbiased; for comparison, WIF's own <code>K</code>/<code>L</code> pair splits about 45/55.
+bit is unbiased; for comparison, WIF's own <code>K</code>/<code>L</code> pair splits about 45/55, so a pair rather
+than a single character is what WIF already asks its users to read.
+
+====Runners-up====
+
+Two assignments were considered and are recorded because they trade differently, not because they are worse in every
+respect. Both place a single scalar bit rather than duplicating it, so neither can reach the <code>k</code>/<code>l</code>
+pair:
+
+{| class="wikitable"
+! !! mainnet unc. !! mainnet cmp. !! testnet unc. !! testnet cmp. !! Trade
+|-
+| Recommended || <code>5</code> <code>a</code> || <code>k</code> <code>l</code> || <code>x</code> <code>0</code> || <code>z</code> <code>t</code> || Both mainnet characters exact; no testnet match
+|-
+| Runner-up A || <code>3</code> <code>4</code> || <code>m</code> <code>l</code> || <code>6</code> <code>7</code> || <code>c</code> <code>u</code> || One character from each network; consecutive digit pairs; <code>m</code> for mainnet, <code>u</code> as a rotated <code>c</code>
+|-
+| Runner-up B || <code>2</code> <code>6</code> || <code>x</code> <code>k</code> || <code>9</code> <code>4</code> || <code>g</code> <code>c</code> || Three WIF characters, the most of any assignment, but no pairing or ordering logic
+|}
+
+Both runners-up also happen to make every uncompressed status begin with a digit and every compressed one begin with
+a letter. That pattern holds in WIF too, across both networks, but it appears to be a consequence of appending the
+compression byte rather than a documented convention, and no source for it as an intended design has been found. It
+is noted as an observation, not relied on.
 
 ===Cross-status ambiguity===
 
@@ -205,9 +242,10 @@ different address. Three things bound that risk, and one does not:
   checksum. A misread status is detected, not silently accepted.
 * Twelve of the sixteen status bit patterns are unused, so a corruption landing in the status bits alone is caught
   even before the checksum is consulted.
-* Compression status is legible from the character class alone: a digit is uncompressed, a letter is compressed.
-  A reader who recalls nothing else about the format cannot mistake one for the other, and the bech32 alphabet
-  already excludes <code>1</code>, <code>b</code>, <code>i</code> and <code>o</code> for confusability.
+* Network is legible from the character alone, because the mainnet and testnet character sets are disjoint. A
+  reader who recalls nothing else about the format cannot mistake one network for the other, and the bech32 alphabet
+  already excludes <code>1</code>, <code>b</code>, <code>i</code> and <code>o</code> for confusability. This is the
+  distinction worth protecting, since a network mistake is the one that is not recoverable.
 * Hamming distance ''between symbol values'' is not a meaningful safeguard here and should not be cited as one.
   Codex32's code is over GF(32); it counts symbol errors, so a status character differing from another in one bit
   and one differing in four bits are both simply one symbol error. Bit distance matters only for the bit-level
@@ -301,8 +339,9 @@ single character, and an unequal one: <code>K</code> and <code>L</code> occur in
 
 This document keeps WIF's character as one of the two options in three of the four cases, and is more legible than
 WIF in two respects. The status is a specified field rather than a side effect of where a number happens to fall,
-so corrupting it is detectable; and compression is readable from the character class, digit against letter, rather
-than from four memorised characters. It cannot reproduce <code>K</code> and <code>L</code> as a pair, because the
+so corrupting it is detectable; and network is readable from disjoint character sets rather than from four
+memorised characters, which is the distinction that matters, since only a network mistake risks a key being
+handled as though it were worthless. It cannot reproduce <code>K</code> and <code>L</code> as a pair, because the
 two options for any status differ in exactly one bit of the symbol and those two characters differ in three.
 
 '''Version bytes versus an indicator symbol.''' Bech32-era formats replaced version bytes with a witness version
