@@ -46,9 +46,21 @@ is public or private is what the HRP says, so that byte never carried informatio
 y-coordinate parity, since the <code>0x02</code>/<code>0x03</code> prefix distinguishes exactly two cases. Compressed
 public keys are therefore serialized in 257 bits wherever they appear, both bare and inside an extended key.
 
+That 257-bit representation is the parity bit first, then the x-coordinate: the parity bit is 0 when
+<code>serP(K)</code> begins <code>0x02</code> and 1 when it begins <code>0x03</code>, followed by the 256-bit
+x-coordinate most significant bit first. Every payload in this document is packed into 5-bit symbols most
+significant bit first, each symbol's most significant bit being the earlier payload bit.
+
 Payloads are a whole number of bytes only by coincidence, so each has some number of spare bits left over in its
 final symbol. Since every payload here is fixed length, those bits are always present and are specified rather than
 left as zero padding.
+
+Where the table below says CRC-''n'', it means the same construction BIP-0093 already uses for the padding of an
+<code>ms</code> secret, at the width given: the remainder of the payload's preceding bits, taken most significant
+bit first, modulo the generator polynomial <code>x^n + x + 1</code> for ''n'' of 3 or 4 and <code>x^2 + x + 1</code>
+for ''n'' of 2, with a zero initial value and no final inversion. A parity bit is the same construction at width 1,
+generator <code>x + 1</code>. The covered bits are every payload bit preceding the spare bits. This introduces no
+new checksum: it is the existing codex32 padding rule applied at the widths these payloads leave over.
 
 {| class="wikitable"
 ! HRP !! Key material !! Payload bits !! Symbols !! Spare bits !! Spare bits carry !! String length
@@ -208,46 +220,60 @@ same reason BIP-0093 says implementations should not correct the human-readable 
 
 ===Identifier===
 
-The first 20 bits of a key's BIP-0032 fingerprint MAY be used as the default codex32 identifier, but only for
-<code>xo</code>. The identifier is four bech32 characters, so a 32-bit fingerprint does not fit and must be
-truncated; implementations that adopt this default MUST take the first 20 bits so that they interoperate.
+The codex32 identifier MUST NOT be derived from the key material, for any profile in this document. An earlier
+revision offered the first 20 bits of the BIP-0032 fingerprint as a default for <code>xo</code>; that default is
+withdrawn, and the analysis below is why.
 
-For every other profile in this document the default is inappropriate, for a reason specific to each:
+What secret sharing protects for public key material is not the secrecy of the key, which is meant to become known,
+but the unlinkability of one recovered share to a particular wallet's on-chain history. A single share found on its
+own, below the threshold, should not tell its finder which outputs it belongs to. A fingerprint-derived identifier
+defeats that, because the fingerprint is <code>hash160</code> of the public key and therefore correlates with data an
+observer already holds:
 
-* <code>pk</code> and <code>pr</code>: the fingerprint is the first 20 bits of <code>hash160</code> of the public
-  key, which is exactly the first 20 bits of a P2PKH or P2WPKH output's script. A single share, below the threshold
-  and on its own, would then narrow the on-chain outputs it belongs to by a factor of about a million. The property
-  secret sharing protects for public key material is not the secrecy of the key, which is meant to become known, but
-  the unlinkability of one recovered share to a particular wallet's on-chain history. A fingerprint default would
-  give that away.
-* <code>xo</code> is the exception because a P2TR output commits to the tweaked output key, not to
-  <code>hash160</code> of the internal key, so that hash appears nowhere on chain and correlates to nothing a
-  passive observer can see.
-* <code>xpub</code>, <code>tpub</code>, <code>xprv</code> and <code>tprv</code>: the fingerprint is not published on
-  chain, but it is carried in descriptors and PSBTs shared with cosigners and watch-only servers, so it remains a
-  cross-document correlator between a share and a wallet those parties already hold.
-* <code>rn</code>: a root node's fingerprint is the master fingerprint that appears in the key origin information of
-  every descriptor derived from it, making it the strongest correlator of all.
+* For <code>pk</code> and <code>pr</code>, the first 20 bits of that hash are the first 20 bits of a P2PKH or P2WPKH
+  output's script. A lone share narrows the candidate outputs by a factor of about a million.
+* For extended keys, the fingerprint is carried in the key origin information of descriptors and PSBTs shared with
+  cosigners and watch-only servers, so it correlates a share with documents those parties already hold.
+* For <code>rn</code>, the fingerprint is the master fingerprint appearing in the origin information of every
+  descriptor derived from it, which is the strongest correlator of the set.
+* For <code>xo</code>, a Taproot output commits to the tweaked output key rather than to <code>hash160</code> of the
+  internal key, so the hash is absent from the chain ''while the output is unspent and spent only by key path''. It
+  does not stay absent: a script-path spend reveals the internal key in the control block, and an <code>xo</code> key
+  used inside a tapscript is revealed with the script. An observer can then take the even-Y compressed form, compute
+  <code>hash160</code>, and match the identifier. Since an encoder cannot know at backup time whether a key will
+  later be revealed, the exception this document previously carved out for <code>xo</code> does not hold.
 
-Where the default does not apply, the identifier SHOULD be chosen the way BIP-0093 already suggests, and MUST NOT be
-derived from the key material.
+Identifiers SHOULD be chosen as BIP-0093 already suggests, from something the holder can reconstruct that is not the
+key.
 
 ===Generation from fresh shares===
 
-BIP-0093's procedure for generating a fresh secret by freely choosing share payloads applies only where every payload
-value of the right length is valid. That holds for <code>rn</code> if its spare bits are left unconstrained, which is
-why this document permits that alternative, and it holds for no other profile here:
+BIP-0093's procedure for generating a fresh secret by choosing share payloads freely applies where every payload of
+the right length is valid. No profile here is quite that permissive, but most remain practical by rejection sampling:
+draw the shares, interpolate, and redraw if the result does not validate. Expected attempts:
 
-* <code>pk</code>, <code>xo</code>, <code>xpub</code> and <code>tpub</code> embed a public key that must be on the
-  curve, which a freely chosen payload essentially never is.
-* <code>xprv</code> and <code>tprv</code> additionally fix depth, parent fingerprint and child number, which a freely
-  chosen payload will not satisfy.
-* <code>pk</code>, <code>xo</code> and the extended keys constrain their spare bits to a CRC or parity of the rest of
-  the payload, which a freely chosen final symbol will not match.
-* <code>pr</code> constrains its spare bits to one of four status patterns.
+{| class="wikitable"
+! Profile !! Constraint on a freely drawn payload !! Expected draws
+|-
+| <code>rn</code>, spare bits unconstrained || None || 1
+|-
+| <code>rn</code> with CRC-3 || 3 bits must match || 8
+|-
+| <code>pr</code> || 4 status bits must be one of 4 valid patterns || 4
+|-
+| <code>pk</code> || x-coordinate must lift to a curve point (about half do), and 3 CRC bits must match || about 16
+|-
+| <code>xo</code> || as <code>pk</code>, with 4 CRC bits || about 32
+|-
+| <code>xpub</code>/<code>tpub</code>/<code>xprv</code>/<code>tprv</code> || also depth, parent fingerprint and child number || not practical
+|}
 
-For these profiles a fresh key MUST be generated first and then split, rather than assembled from freely chosen
-shares.
+Implementations MAY use rejection sampling for any profile in the upper rows; the retry loop should stay internal to
+one card-generation step rather than exposing rejected draws to the user. For the extended-key profiles it is not
+practical: a fresh key is by definition a master key, so depth, parent fingerprint and child number must all be zero,
+which a freely drawn payload satisfies with probability around 2<sup>-72</sup>. Those profiles MUST be generated
+first and split afterwards. <code>rn</code> covers the master-key case compactly and without that problem, which is
+the better route to a fresh root.
 
 ==Rationale==
 
