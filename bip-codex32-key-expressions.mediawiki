@@ -56,7 +56,12 @@ final symbol. Since every payload here is fixed length, those bits are always pr
 left as zero padding.
 
 Where the table below says CRC-''n'', it means the same construction BIP-0093 already uses for the padding of an
-<code>ms</code> secret, at the width given: the remainder of the payload's preceding bits, taken most significant
+<code>ms</code> secret, at the width given. The polynomial is conventional rather than optimised, and implementers
+should not substitute another believing a property is being preserved: a degree-''n'' CRC guarantees detection only
+of bit bursts no longer than ''n'', while a single wrong codex32 character is a burst of up to 5, so no width-3 or
+width-4 choice can guarantee catching even one corrupted character. Every candidate polynomial reduces to the same
+2<sup>-''n''</sup> rejection rate, and matching BIP-0093 costs nothing and reuses existing implementations. Its
+parameters are: the remainder of the payload's preceding bits, taken most significant
 bit first, modulo the generator polynomial <code>x^n + x + 1</code> for ''n'' of 3 or 4 and <code>x^2 + x + 1</code>
 for ''n'' of 2, with a zero initial value and no final inversion. A parity bit is the same construction at width 1,
 generator <code>x + 1</code>. The covered bits are every payload bit preceding the spare bits. This introduces no
@@ -286,32 +291,44 @@ key.
 
 ===Generation from fresh shares===
 
-BIP-0093's procedure for generating a fresh secret by choosing share payloads freely applies where every payload of
-the right length is valid. No profile here is quite that permissive, but most remain practical by rejection sampling:
-draw the shares, interpolate, and redraw if the result does not validate. Expected attempts:
+BIP-0093's procedure for generating a fresh secret by choosing share payloads freely produces a secret nobody chose
+and nobody knew in advance. That is exactly what is wanted for a seed. For most profiles here it is not wanted at
+all, and the reason is not cost:
+
+'''A freely generated public key is useless.''' Interpolating random shares to a <code>pk</code>, <code>xo</code>,
+<code>xpub</code> or <code>tpub</code> yields a point on the curve whose discrete logarithm nobody knows. No one can
+sign for it, and funds paid to it are unspendable. Roughly half of x-coordinates lift to a curve point, so the
+procedure terminates quickly, but terminating quickly on a worthless result is not an argument for permitting it.
+Public-key profiles MUST be derived from a private key that already exists, and MUST NOT be generated this way.
+
+Where the payload ''is'' the secret, the procedure is meaningful and permitted:
 
 {| class="wikitable"
-! Profile !! Constraint on a freely drawn payload !! Expected draws
+! Profile !! Freely generatable? !! Constraint on a drawn payload !! Expected draws
 |-
-| <code>rn</code>, spare bits unconstrained || None || 1
+| <code>rn</code>, spare bits unconstrained || Yes || None || 1
 |-
-| <code>rn</code> with CRC-3 || 3 bits must match || 8
+| <code>rn</code> with CRC-3 || Yes || 3 bits must match || 8
 |-
-| <code>pr</code> || 4 status bits must be one of 4 valid patterns || 4
+| <code>pr</code> || Yes || 4 status bits must be one of 4 valid patterns || 4
 |-
-| <code>pk</code> || x-coordinate must lift to a curve point (about half do), and 3 CRC bits must match || about 16
+| <code>xprv</code>/<code>tprv</code> || In principle || Depth, parent fingerprint and child number must all be zero || about 2<sup>72</sup>
 |-
-| <code>xo</code> || as <code>pk</code>, with 4 CRC bits || about 32
-|-
-| <code>xpub</code>/<code>tpub</code>/<code>xprv</code>/<code>tprv</code> || also depth, parent fingerprint and child number || not practical
+| <code>pk</code>, <code>xo</code>, <code>xpub</code>, <code>tpub</code> || No || Result has no known private key || —
 |}
 
-Implementations MAY use rejection sampling for any profile in the upper rows; the retry loop should stay internal to
-one card-generation step rather than exposing rejected draws to the user. For the extended-key profiles it is not
-practical: a fresh key is by definition a master key, so depth, parent fingerprint and child number must all be zero,
-which a freely drawn payload satisfies with probability around 2<sup>-72</sup>. Those profiles MUST be generated
-first and split afterwards. <code>rn</code> covers the master-key case compactly and without that problem, which is
-the better route to a fresh root.
+For <code>xprv</code> and <code>tprv</code> the obstacle is that a freshly generated key is by definition a master
+key, so its metadata must be zero, which a drawn payload essentially never satisfies. <code>rn</code> carries the
+same secret material without the metadata, so it is the profile to use for a fresh root; <code>xprv</code> is for
+keys that already exist.
+
+Note that a CRC constrains the recovered secret and not the individual shares. The set of CRC-valid payloads is a
+subspace over GF(2) but not over GF(32), and share interpolation multiplies symbols by GF(32) coefficients, so the
+shares of a CRC-valid secret do not themselves satisfy the CRC; measured on random payloads, a scaled payload
+remains CRC-valid only at the chance rate. This is why the counts above apply to the interpolated result rather than
+to each draw, and it is also where the CRC earns its place: it will not catch a corrupted share, which the checksum
+already does, but it will catch a recovery performed with the wrong shares, a repeated index, or shares from a
+different set, none of which the checksum notices.
 
 ==Rationale==
 
