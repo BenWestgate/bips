@@ -232,19 +232,26 @@ a two-possibility search the holder can always perform:
 {| class="wikitable"
 ! Status !! Status bits !! First character !! WIF's leading character
 |-
-| mainnet, uncompressed || <code>1010</code> || <code>5</code> or <code>4</code> || <code>5</code>
+| mainnet, uncompressed || <code>0111</code> || <code>w</code> or <code>0</code> || <code>5</code>
 |-
-| mainnet, compressed || <code>1111</code> || <code>7</code> or <code>l</code> || <code>K</code> or <code>L</code>
+| mainnet, compressed || <code>1011</code> || <code>k</code> or <code>h</code> || '''<code>K</code>''' or <code>L</code>
 |-
-| testnet, uncompressed || <code>0001</code> || <code>z</code> or <code>r</code> || <code>9</code>
+| testnet, uncompressed || <code>0000</code> || <code>q</code> or <code>p</code> || <code>9</code>
 |-
-| testnet, compressed || <code>0100</code> || <code>g</code> or <code>f</code> || <code>c</code>
+| testnet, compressed || <code>1100</code> || <code>c</code> or <code>e</code> || '''<code>c</code>'''
 |}
 
 Every mainnet character is at Hamming distance 3 or more from every testnet character, so no single bit error, and no
 pair of them, can turn one network's indicator into the other's. Within a network the two statuses are 2 apart, which
-still means no single bit flip crosses them. Mainnet keeps WIF's <code>5</code> for uncompressed and <code>L</code>
-for compressed; testnet's own characters are unreachable at this distance, and are given up deliberately.
+still means no single bit flip crosses them.
+
+Both compressed statuses keep WIF's own character, <code>k</code> for mainnet and <code>c</code> for testnet. These
+are the two that matter, since compressed keys are what wallets produce; the uncompressed statuses take neutral
+characters rather than WIF's <code>5</code> and <code>9</code>. Reaching a third WIF character is possible but only
+by placing mainnet uncompressed one bit from testnet uncompressed, which is rejected: uncompressed keys belong to old
+paper wallets, exactly the material a paper backup format attracts, so they may be over-represented here rather than
+rare. Where the scalar bit sits in the symbol changes which characters are reachable but never the distances, since
+those depend only on the 4-bit codes; position 0 is used so the scalar stays contiguous.
 
 Only 8 of the 32 possible first symbols are valid, so three quarters of corruptions landing in this symbol are
 rejected by the encoding before the checksum is consulted.
@@ -383,6 +390,29 @@ implementation must reject outright, before any CRC is consulted.
 
 ==Rationale==
 
+'''Choosing the private-key HRP.''' Every lowercase letter shares the same high three bits and has a distinct low
+five, so for a two-character lowercase HRP the distance in the checksummed codeword is simply the number of
+differing characters. Every pair among the Bitcoin HRPs in use — <code>bc</code>, <code>tb</code>, <code>ms</code>,
+<code>cl</code>, <code>ln</code>, <code>sp</code> — and among <code>pk</code> and <code>xo</code> is 2. Reaching 2
+from <code>pk</code> therefore requires differing in ''both'' characters, which rules out <code>pr</code>,
+<code>pv</code>, <code>sk</code> and every other option that keeps a letter. The stakes are higher for this pair
+than any other: <code>pk</code> is publishable and the private HRP is the one thing that must never be, so a
+one-character slip between them is the worst confusion the format can offer. Three candidates, for reviewers to
+weigh:
+
+{| class="wikitable"
+! HRP !! Reading !! Distance from <code>pk</code> !! Notes
+|-
+| <code>se</code> || secret || 2 || "Secret key" is the term BIP-0340 and BIP-0327 use throughout, and libsecp256k1's API says <code>seckey</code>, so this is Bitcoin's own vocabulary rather than a coinage. It also contradicts a misreading of <code>pk</code> as "private key" instead of merely failing to correct it.
+|-
+| <code>wf</code> || WIF, without the letter the data alphabet excludes || 2 || Immediately recognisable to anyone who knows the format it replaces, but it says nothing about secrecy, so a reader who has already misread <code>pk</code> as "private key" is left to conclude <code>wf</code> is the public one.
+|-
+| <code>pr</code> || private || '''1''' || Pairs with <code>pk</code> and reads well beside it, and that is the whole of its case. It would be the only Bitcoin HRP differing from another in one character rather than two, and the pair it breaks with is the one where confusion is fatal.
+|}
+
+No prior bech32 encoding of bare private keys appears in the BIP repository to follow; <code>ms</code>,
+<code>cl</code> and the silent-payment prefixes are the nearest relatives, and none encodes a bare key.
+
 '''<code>pk</code> and <code>pr</code> are one symbol apart, which is why the HRP must not be corrected.'''
 Expanding <code>pk</code> and <code>pr</code> for the checksum gives <code>[3,3,0,16,11]</code> and
 <code>[3,3,0,16,18]</code>: <code>k</code> and <code>r</code> share their high bits, so the pair differs in a single
@@ -393,6 +423,14 @@ the HRP is inside the checksummed codeword, and length is a weaker signal than t
 argument for the rule already stated above: implementations MUST NOT correct the human-readable part. Every HRP pair
 in this document is one or two symbols apart, and <code>pk</code>/<code>pr</code>, <code>pk</code>/<code>pv</code>
 and <code>pk</code>/<code>sk</code> are all at one.
+
+'''<code>rn</code> is one character from <code>ln</code>, and that is a known wart.''' Lightning's
+<code>ln</code> differs from <code>rn</code> in a single character, so the root node is the second HRP here that
+misses the distance of 2 every other Bitcoin pair keeps. It is milder than the <code>pk</code>/<code>pr</code> case,
+since mistaking a root node for a Lightning invoice discloses nothing and the checksum rejects it either way, but it
+is the same broken invariant. <code>rt</code> for "root", <code>nd</code> for "node", <code>nr</code> and
+<code>hd</code> all sit at 2 from every Bitcoin HRP including <code>ln</code>, and any of them would restore it at
+the cost of the reasoning below. Reviewers should decide whether that reasoning is worth the exception.
 
 '''Why <code>rn</code> for the root node?''' The choice matters more than it looks, because a 64-byte
 <code>ms</code> seed and an <code>rn</code> root node are both 127 characters with an expanded length of 129. The
