@@ -49,9 +49,10 @@ Every payload is packed into 5-bit symbols most significant bit first, each symb
 earlier payload bit. Every payload is fixed length, so the spare bits left over in its final symbol are always present,
 and their contents are specified rather than left as padding.
 
-Where the table below says CRC-''n'', the spare bits hold the remainder of every payload bit preceding them, taken most
-significant bit first, modulo <code>x^n + x + 1</code> for ''n'' of 3 or 4, with a zero initial value and no final
-inversion. A parity bit is the same construction at width 1, generator <code>x + 1</code>.
+Where the table below says CRC-''n'', the spare bits hold <code>M(x) * x^n mod (x^n + x + 1)</code> for ''n'' of 3 or
+4, where the coefficients of <code>M(x)</code> are a 1 followed by every payload bit preceding the spare bits, most
+significant first, and there is no final inversion. A parity bit is the same construction at width 1, generator
+<code>x + 1</code>.
 
 {| class="wikitable"
 ! HRP !! Key material !! Payload bits !! Symbols !! Spare bits !! Spare bits carry !! String length
@@ -194,9 +195,10 @@ over random payloads, CRC-3 catches 90.3% of all substitutions against 87.5% by 
 <code>x^3 + x + 1</code> is optimal at width 3, and <code>x^4 + x + 1</code> is preferred to
 <code>x^4 + x^3 + x^2 + x + 1</code>, whose period of 5 misses 2-bit errors at the same position in different
 characters. Covering every bit before the spare bits is free, since the flipped bits of one character are at most 4
-apart, within both periods. Because the CRC-valid payloads are not closed under GF(32) interpolation, a CRC checks the
-recovered secret rather than each share, so it catches a recovery from wrong, too few or mixed shares, which the
-checksum cannot.
+apart, within both periods. Payload lengths are fixed, so the leading 1 only adds a constant and cannot change which
+errors are detected; it starts the CRC from 1, as bech32 and codex32 checksums start, so an all-zero payload fails.
+Because the CRC-valid payloads are not closed under GF(32) interpolation, a CRC checks the recovered secret rather than
+each share, so it catches a recovery from wrong, too few or mixed shares, which the checksum cannot.
 
 '''Extended key layout.''' Putting the child number before the fingerprint aligns both readable fields at 143 characters
 with a depth ceiling of 31; BIP-0032's order needs a 3-bit depth to reach 143, and 142 characters needs a 3-bit depth
