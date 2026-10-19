@@ -747,6 +747,20 @@ This example has a human-readable part longer than 83 characters.
 
 * <code>a84characterslongcodex32humanreadablepartforsecretsharewiththedigit1andthelettersbio10keyss9hqxu3pxsnkdkth</code>
 
+===Invalid share sets===
+
+Each of the following strings is a valid codex32 string, but does not form a valid set of shares with <code>ms12namea320zyxwvutsrqpnmlkjhgfedcaxrpp870hkkqrm</code>, the share of Test vector 2 with index <code>A</code>.
+Each is the share of Test vector 2 with index <code>C</code>, with its human-readable part or one header field changed.
+
+* Different human-readable part: <code>cl12namecacdefghjklmnpqrstuvwxyz023mxfwvh498carr</code>
+* Different threshold: <code>ms13namecacdefghjklmnpqrstuvwxyz023772x8fxxjrlyl</code>
+* Different identifier: <code>ms12fauxcacdefghjklmnpqrstuvwxyz023wt92ahv9fh5uc</code>
+* Repeated share index: <code>ms12nameaacdefghjklmnpqrstuvwxyz023x0mjmpvjcpdx9</code>
+
+The shares of Test vector 3 with indexes <code>a</code> and <code>c</code> do not form a valid set, because there are fewer of them than the threshold.
+
+Given the set with different identifiers, or these two shares of Test vector 3, <code>codex32_recover</code> returns a valid codex32 secret.
+
 ==Changelog==
 
 Versions before 0.2.1 are assigned retrospectively to significant revisions.
@@ -755,7 +769,7 @@ Versions before 0.2.1 are assigned retrospectively to significant revisions.
 ** Allow human-readable parts other than "ms"; the checksum covers them and counts their expansion toward its length limits.
 ** Rename the inline <code>ms32</code> functions to <code>codex32</code> and pass the human-readable part to the checksum functions.
 ** Require all shares in a set to have the same human-readable part.
-** Add test vectors for other human-readable parts.
+** Add test vectors for other human-readable parts and invalid share sets.
 * '''0.2.1''' (2026-09-13): [https://github.com/bitcoin/bips/pull/2285 #2285]
 ** Separate the codex32 format, optional secret sharing, and master seed encoding into distinct sections.
 ** Remove duplicate explanations and inline encoding and decoding helpers, reorganize headings, and clarify seed-size units without changing behavior.
