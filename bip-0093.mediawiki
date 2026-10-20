@@ -234,11 +234,14 @@ The share generation and secret recovery procedures below are the same for both 
 
 The functions in this section represent each codex32 string as a list of integers obtained by converting the data-part characters to their values using the bech32 character table from BIP-0173.
 This representation omits the human-readable part, which is the same for the input strings and the result.
-The functions do not check the conditions on their inputs stated below, so implementations MUST check them before using the functions.
+The <code>codex32_interpolate</code> function does not check the conditions on its inputs stated below, so implementations MUST check them before using it, for example with <code>codex32_check_set</code>.
 
 The first argument to the <code>codex32_interpolate</code> function is a list of codex32 strings in this representation.
 Its second argument is a target share index converted to its integer value using the same character table, distinct from all input share indexes.
 The result represents the codex32 string at that index.
+
+The <code>codex32_check_set</code> function instead takes a list of valid codex32 strings and a target share index character.
+It returns true if they satisfy the conditions stated below.
 
 <source lang="python">
 BECH32_INV = [
@@ -274,6 +277,13 @@ def codex32_interpolate(l, x):
             n ^= bech32_mul(w[j], l[j][i])
         res.append(n)
     return res
+
+def codex32_check_set(strings, x):
+    parts = [s.lower().rpartition("1") for s in strings]
+    headers = {(hrp, data[:5], len(data)) for hrp, _, data in parts}
+    indexes = [data[5] for _, _, data in parts] + [x.lower()]
+    return (len(headers) == 1 and len(set(indexes)) == len(indexes)
+            and len(strings) == int(parts[0][2][0]))
 </source>
 
 <span id="Generating_Shares"></span>
@@ -759,7 +769,8 @@ Each is the share of Test vector 2 with index <code>C</code>, with its human-rea
 
 The shares of Test vector 3 with indexes <code>a</code> and <code>c</code> do not form a valid set, because there are fewer of them than the threshold.
 
-Given the set with different identifiers, or these two shares of Test vector 3, <code>codex32_recover</code> returns a valid codex32 secret.
+<code>codex32_check_set</code> returns false for each of these sets with the target index <code>s</code>.
+Without that check, <code>codex32_recover</code> returns a valid codex32 secret for the set with different identifiers and for these two shares of Test vector 3.
 
 ==Changelog==
 
@@ -769,6 +780,7 @@ Versions before 0.2.1 are assigned retrospectively to significant revisions.
 ** Allow human-readable parts other than "ms"; the checksum covers them and counts their expansion toward its length limits.
 ** Rename the inline <code>ms32</code> functions to <code>codex32</code> and pass the human-readable part to the checksum functions.
 ** Require all shares in a set to have the same human-readable part.
+** Add the <code>codex32_check_set</code> function to check the conditions on share sets.
 ** Add test vectors for other human-readable parts and invalid share sets.
 * '''0.2.1''' (2026-09-13): [https://github.com/bitcoin/bips/pull/2285 #2285]
 ** Separate the codex32 format, optional secret sharing, and master seed encoding into distinct sections.
