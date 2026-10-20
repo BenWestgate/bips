@@ -206,6 +206,27 @@ A codex32 string using the long checksum follows the same specification as one u
 * The payload is a sequence of up to 1001 - 2''n'' bech32 characters, where ''n'' is the length of the human-readable part.
 * The checksum consists of 15 bech32 characters as defined above.
 
+The <code>codex32_decode</code> function applies the rules above to a string.
+It returns the human-readable part and the data part, converted to lowercase, or <code>None</code> if the string is not a valid codex32 string.
+
+<source lang="python">
+CHARSET = "qpzry9x8gf2tvdw0s3jn54khce6mua7l"
+
+def codex32_decode(s):
+    hrp, _, data = s.lower().rpartition("1")
+    if (s.lower() != s and s.upper() != s) or not 1 <= len(hrp) <= 83:
+        return None
+    if any(ord(c) < 33 or ord(c) > 126 for c in hrp) or any(c not in CHARSET for c in data):
+        return None
+    if not codex32_verify_checksum(hrp, [CHARSET.find(c) for c in data]):
+        return None
+    if len(data) < 6 + (13 if 2 * len(hrp) + 1 + len(data) <= 93 else 15):
+        return None
+    if not data[0].isdigit() or data[0] == "0" and data[5] != "s":
+        return None
+    return hrp, data
+</source>
+
 <span id="Error_Correction"></span>
 ====Error correction====
 
@@ -232,10 +253,10 @@ The corresponding secret has index "s", as described in [[#Unshared_Secret|Unsha
 
 The share generation and secret recovery procedures below are the same for both checksum variants.
 
-The first argument to the <code>codex32_interpolate</code> function is a list of valid codex32 strings.
+The first argument to the <code>codex32_interpolate</code> function is a list of codex32 strings.
 Its second argument is a target share index character, distinct from all input share indexes.
 It returns the codex32 string at that index, in lowercase.
-It raises an error if <code>codex32_check_set</code> finds that its inputs do not satisfy the conditions stated below.
+It raises an error if <code>codex32_decode</code> rejects an input, or if <code>codex32_check_set</code> finds that the inputs do not satisfy the conditions stated below.
 
 <source lang="python">
 BECH32_INV = [
@@ -262,17 +283,15 @@ def bech32_lagrange(l, x):
         c.append(m)
     return [bech32_mul(n, BECH32_INV[i]) for i in c]
 
-CHARSET = "qpzry9x8gf2tvdw0s3jn54khce6mua7l"
-
 def codex32_check_set(l, x):
     headers = {(hrp, data[:5], len(data)) for hrp, data in l}
     indexes = [data[5] for _, data in l] + [x]
     return (len(headers) == 1 and len(set(indexes)) == len(indexes)
-            and len(l) == int(l[0][1][0]))
+            and len(l) == int(l[0][1][0]) and len(x) == 1 and x in CHARSET)
 
 def codex32_interpolate(strings, x):
-    l = [s.lower().rsplit("1", 1) for s in strings]
-    if not codex32_check_set(l, x.lower()):
+    l = [codex32_decode(s) for s in strings]
+    if None in l or not codex32_check_set(l, x.lower()):
         raise ValueError("invalid share set")
     w = bech32_lagrange([CHARSET.find(s[1][5]) for s in l], CHARSET.find(x.lower()))
     res = l[0][0] + "1"
@@ -777,7 +796,8 @@ Versions before 0.2.1 are assigned retrospectively to significant revisions.
 ** Allow human-readable parts other than "ms"; the checksum covers them and counts their expansion toward its length limits.
 ** Rename the inline <code>ms32</code> functions to <code>codex32</code> and pass the human-readable part to the checksum functions.
 ** Require all shares in a set to have the same human-readable part.
-** Make <code>codex32_interpolate</code> and <code>codex32_recover</code> take and return codex32 strings, and raise an error for invalid share sets.
+** Add a <code>codex32_decode</code> function for any human-readable part.
+** Make <code>codex32_interpolate</code> and <code>codex32_recover</code> take and return codex32 strings, and raise an error for invalid strings or share sets.
 ** Add test vectors for other human-readable parts and invalid share sets.
 * '''0.2.1''' (2026-09-13): [https://github.com/bitcoin/bips/pull/2285 #2285]
 ** Separate the codex32 format, optional secret sharing, and master seed encoding into distinct sections.
