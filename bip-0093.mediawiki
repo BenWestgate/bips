@@ -255,7 +255,7 @@ The share generation and secret recovery procedures below are the same for both 
 
 The first argument to the <code>codex32_interpolate</code> function is a list of codex32 strings.
 Its second argument is a target share index character, distinct from all input share indexes.
-It returns the codex32 string at that index, in lowercase.
+It returns the codex32 string at that index, in uppercase if all the inputs are uppercase and in lowercase otherwise.
 It raises an error if <code>codex32_decode</code> rejects an input, or if <code>codex32_check_set</code> finds that the inputs do not satisfy the conditions stated below.
 
 <source lang="python">
@@ -300,7 +300,7 @@ def codex32_interpolate(strings, x):
         for j in range(len(l)):
             n ^= bech32_mul(w[j], CHARSET.find(l[j][1][i]))
         res += CHARSET[n]
-    return res
+    return res.upper() if all(s == s.upper() for s in strings) else res
 </source>
 
 <span id="Generating_Shares"></span>
