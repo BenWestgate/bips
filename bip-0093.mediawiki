@@ -213,6 +213,8 @@ It returns the human-readable part and the data part, converted to lowercase, or
 CHARSET = "qpzry9x8gf2tvdw0s3jn54khce6mua7l"
 
 def codex32_decode(s):
+    if any(ord(c) < 33 or ord(c) > 126 for c in s):
+        return None
     hrp, _, data = s.lower().rpartition("1")
     if (s.lower() != s and s.upper() != s) or not 1 <= len(hrp) <= 83:
         return None
