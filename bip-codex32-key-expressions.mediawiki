@@ -292,6 +292,13 @@ wherever they are accepted today.
 * Whether the extended-key HRPs should stay 4 characters, given that <code>xprv</code> and <code>tprv</code> are then
   told apart by content rather than by shape.
 
+==Reference implementation==
+
+An experimental Python key-material codec and interoperability checks are provided in
+<code>bip-codex32-key-expressions/</code>. It imports the generic codex32 framing and checksum implementation from
+<code>python-codex32</code>. The layouts and key validation in that directory are independent code. It does not
+implement descriptor parsing or choose a representation for key origin information.
+
 ==Test vectors==
 
 To be written once the payload layouts stop moving. They must cover, for each profile: the bit packing of a known key,
