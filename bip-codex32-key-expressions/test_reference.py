@@ -60,12 +60,19 @@ class ReferenceTests(unittest.TestCase):
             encode_xonly_key(b"\xff" * 32)
 
     def test_private_key_wif_round_trip(self):
+        first_symbols = {
+            ("main", False): "w",
+            ("main", True): "k",
+            ("test", False): "q",
+            ("test", True): "c",
+        }
         for network in ("main", "test"):
             for compressed in (False, True):
                 scalar = (1).to_bytes(32, "big")
                 wif = wif_to_base58(scalar, network=network, compressed=compressed)
                 self.assertEqual(wif_from_base58(wif), (scalar, network, compressed))
                 encoded = encode_private_key(scalar, network=network, compressed=compressed)
+                self.assertEqual(encoded.split("1", 1)[1][6], first_symbols[(network, compressed)])
                 decoded = decode_key(encoded)
                 self.assertEqual(
                     (decoded.key, decoded.network, decoded.compressed), (scalar, network, compressed)
