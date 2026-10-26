@@ -105,7 +105,6 @@ introduces no new checksum: it is the existing codex32 padding rule at the width
 |-
 | <code>xprv</code>/<code>tprv</code> || Extended private key || 584 || 117 || 1 || parity || 143
 |-
-| <code>nr</code> || Node root: chain code and scalar || 512 || 103 || 3 || CRC-3, or unconstrained || 127
 |}
 
 A compressed <code>pk</code>, an <code>xo</code> and a <code>wf</code> are all 74 characters with a 2-character HRP
@@ -113,6 +112,14 @@ and a 52-symbol payload, matching <code>cl</code> and a 256-bit <code>ms</code> 
 interchangeable inside a script therefore has an interchangeable shape, so an implementation can assume one length.
 An extended public and an extended private key are likewise the same length as each other, which is why dropping
 BIP-0032's <code>0x00</code> is safe to do: it changes the spare-bit count and nothing else.
+
+The payload rules in this document apply to an unshared secret (share index <code>s</code>) or to the secret after
+recovery. A share with a different index is a sequence of complete GF(32) payload symbols, not a serialized key.
+Implementations MUST verify its codex32 checksum but MUST NOT reject it because its payload fails a key-specific
+constraint, including a scalar range, curve-point, status-bit or padding check. Recovery MUST first verify the
+threshold and distinct share indices as specified in BIP-0093; key-specific checks apply only after interpolation.
+Every bit of every share symbol, including bits later discarded when extracting key material from the recovered
+secret, participates in interpolation. Encoders MUST NOT trim or overwrite those bits in shares.
 
 ===Extended key fields===
 
@@ -308,8 +315,6 @@ observer already holds:
   output's script. A lone share narrows the candidate outputs by a factor of about a million.
 * For extended keys, the fingerprint is carried in the key origin information of descriptors and PSBTs shared with
   cosigners and watch-only servers, so it correlates a share with documents those parties already hold.
-* For <code>nr</code>, the fingerprint is the master fingerprint appearing in the origin information of every
-  descriptor derived from it, which is the strongest correlator of the set.
 * For <code>xo</code>, a Taproot output commits to the tweaked output key rather than to <code>hash160</code> of the
   internal key, so the hash is absent from the chain ''while the output is unspent and spent only by key path''. It
   does not stay absent: a script-path spend reveals the internal key in the control block, and an <code>xo</code> key
@@ -346,11 +351,7 @@ Where the payload ''is'' the secret, the procedure is meaningful and permitted:
 {| class="wikitable"
 ! Profile !! Freely generatable? !! Constraint on a drawn payload !! Expected draws
 |-
-| <code>nr</code>, spare bits unconstrained || Yes || None || 1
-|-
-| <code>nr</code> with CRC-3 || Yes || 3 bits must match || 8
-|-
-| <code>wf</code> || Yes || 4 status bits must be one of 4 valid patterns || 4
+| <code>wf</code> || Yes || 4 status bits must match the requested network and compression status || about 16
 |-
 | <code>xprv</code>/<code>tprv</code> || In principle || Depth, parent fingerprint and child number must all be zero || about 2<sup>72</sup>
 |-
@@ -358,9 +359,8 @@ Where the payload ''is'' the secret, the procedure is meaningful and permitted:
 |}
 
 For <code>xprv</code> and <code>tprv</code> the obstacle is that a freshly generated key is by definition a master
-key, so its metadata must be zero, which a drawn payload essentially never satisfies. <code>nr</code> carries the
-same secret material without the metadata, so it is the profile to use for a fresh root; <code>xprv</code> is for
-keys that already exist.
+key, so its metadata must be zero, which a drawn payload essentially never satisfies. These profiles are for
+keys that already exist. A compact root-node backup is outside the scope of this BIP.
 
 Note that a CRC constrains the recovered secret and not the individual shares. This is why it costs nothing when a
 key is split rather than generated: the constraint is satisfied once, on the secret, before any share exists. The set of CRC-valid payloads is a
@@ -368,11 +368,10 @@ subspace over GF(2) but not over GF(32), and share interpolation multiplies symb
 shares of a CRC-valid secret do not themselves satisfy the CRC; measured on random payloads, a scaled payload
 remains CRC-valid only at the chance rate. This is why the counts above apply to the interpolated result rather than
 to each draw, and it is also where the CRC earns its place: it will not catch a corrupted share, which the checksum
-already does, but it will catch a recovery performed with the wrong shares, with too few of them, or with shares
+already does, but it can catch a recovery performed with the wrong shares or with shares
 belonging to a different set, none of which the checksum notices, because each of those produces a well-formed
-string carrying the wrong secret. It is a recovery check rather than an error check. A repeated share index is not
-in that list: interpolation divides by the difference of two indices, so a repeat is a degenerate input that an
-implementation must reject outright, before any CRC is consulted.
+string carrying the wrong secret. It is a weak recovery check rather than an error check. Too few shares and repeated
+indices MUST be rejected before interpolation, without relying on a CRC.
 
 ==Rationale==
 
@@ -433,7 +432,7 @@ does not arise in practice.
 |-
 | <code>sv</code>, <code>sd</code> || secret value, secret data || No — one from <code>sp</code> || Same merits and the same disqualification as <code>se</code>.
 |-
-| <code>pr</code> || private || No — one from <code>pk</code> and <code>nr</code> || Pairs with <code>pk</code> and reads well beside it, which is the whole of its case. It breaks the rule on the pair where confusion is fatal.
+| <code>pr</code> || private || No — one from <code>pk</code> || Pairs with <code>pk</code> and reads well beside it, which is the whole of its case. It breaks the rule on the pair where confusion is fatal.
 |}
 
 '''Prior art.''' [https://lists.linuxfoundation.org/pipermail/bitcoin-dev/2018-May/016038.html Bech32X], proposed by
@@ -445,9 +444,10 @@ two letters have already been published meaning the opposite, which is evidence 
 than hypothetical. Bech32X also proposed its own 27-character BCH checksum correcting up to 7 errors, where this
 document reuses codex32's.
 
-Its <code>xp</code>, a chain code and a private key, is the same payload as <code>nr</code> here.
-<code>xp</code> is unavailable in this set regardless, being one character from both <code>sp</code> and
-<code>xo</code>. [[bip-0178.mediawiki|BIP-0178]], Version Extended WIF, attacks the neighbouring problem of recording
+Its <code>xp</code> held a chain code and a private key. This BIP does not define a compact root-node encoding;
+the <code>xprv</code>/<code>tprv</code> profiles retain BIP-0032's master metadata. The reviewer of this draft
+identified a compact format called CX1 as an alternative for people who need a shorter paper root backup.
+[[bip-0178.mediawiki|BIP-0178]], Version Extended WIF, attacks the neighbouring problem of recording
 a key's intended script type, and stays in base58.
 
 <code>cc</code> for "chain code" has also been suggested in discussion. It is one character from both
@@ -463,33 +463,6 @@ the HRP is inside the checksummed codeword, and length is a weaker signal than t
 argument for the rule already stated above: implementations MUST NOT correct the human-readable part. Every HRP pair
 in this document is one or two symbols apart, and <code>pk</code>/<code>pr</code>, <code>pk</code>/<code>pv</code>
 and <code>pk</code>/<code>sk</code> are all at one.
-
-'''Root-node candidates.''' Measured against the same set, the names that clear the rule are <code>nr</code>
-("node root"), <code>nx</code> ("node extended"), <code>nd</code> ("node"), <code>rt</code> ("root") and
-<code>hd</code> ("hierarchical deterministic"). <code>nr</code> is specified because it is the only one carrying both
-senses at once; <code>hd</code> is the weakest, describing any key in the hierarchy rather than its head, and
-<code>nx</code>, <code>nd</code> and <code>rt</code> each carry one sense. Ruled out by distance: <code>rn</code> and
-<code>mn</code> (one from <code>ln</code>, and <code>mn</code> also one from <code>ms</code>), <code>cc</code> for
-"chain code" (one from both <code>bc</code> and <code>cl</code>), <code>rk</code> (one from <code>pk</code>) and
-Bech32X's own <code>xp</code> (one from <code>sp</code> and <code>xo</code>).
-
-'''Why not <code>rn</code>?''' "Root node" reads better, and its resemblance to <code>m</code>, which is what
-BIP-0032 calls the master node, is apt. It is dropped anyway because it differs from Lightning's <code>ln</code> in
-one character, and the consequence is not mild. An <code>nr</code> payload is a chain code and a master private key;
-someone who mistakes one for a Lightning invoice and hands it over to be paid has given away the whole wallet. That
-is at least as bad as confusing <code>pk</code> with a private-key HRP, so the invariant every other Bitcoin HRP
-keeps — differing from each other in two characters, not one — is worth keeping here too.
-
-'''Why <code>nr</code> for the root node?''' The choice matters more than it looks, because a 64-byte
-<code>ms</code> seed and an <code>nr</code> root node are both 127 characters with an expanded length of 129. The
-HRP is the only thing telling them apart, so confusing the two costs more here than elsewhere. <code>mn</code> for
-"master node" matches BIP-0032's own vocabulary but is one substitution from <code>ms</code> and from
-<code>ln</code>; <code>rn</code> clears <code>ms</code> but not <code>ln</code>. <code>nr</code> reverses it to
-"node root" and is two substitutions from every Bitcoin HRP in use. The alternatives at the same distance are
-<code>nx</code>, <code>nd</code>, <code>rt</code> and <code>hd</code>; <code>hd</code> describes any key in the
-hierarchy rather than its head, and the others carry only one of the two senses. <code>mk</code> and <code>rs</code>
-are already registered in SLIP-0173, and <code>cc</code> for "chain code" is one character from both
-<code>bc</code> and <code>cl</code>.
 
 '''Why one HRP for private keys instead of <code>wif</code> and <code>twif</code>?''' A 4-character <code>twif</code>
 would have the same shape as <code>tpub</code> and <code>tprv</code> while holding something entirely different, which
@@ -608,8 +581,6 @@ inputs wherever they are accepted today.
 * Key origin information: a bracketed BIP-0380 prefix outside the codex32 string, or folded into the HRP. Folding is
   the larger QR saving, since origin information dominates a cosigner-heavy descriptor, but a bare key is where the
   one-version saving above comes from, and an encoder that does not segment loses much of it.
-* Whether <code>nr</code> should constrain its spare bits to a CRC-3 or leave them unconstrained. Only the
-  unconstrained form can be produced by BIP-0093's fresh-share procedure.
 * Whether the extended-key HRPs should stay 4 characters, given that the same reasoning that rejected
   <code>twif</code> applies to telling <code>xprv</code> and <code>tprv</code> apart from each other by content
   rather than by shape.
