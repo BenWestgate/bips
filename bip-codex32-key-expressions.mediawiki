@@ -125,7 +125,7 @@ the parent fingerprint, which is the reverse of BIP-0032's order:
 |-
 | Depth || 5 || 1 || Values 0 to 31
 |-
-| Child number || 35 || 7 || Hardened flag, then 3 suffix bits, then the 31-bit index
+| Child number || 35 || 7 || Hardened flag, then 3 zero bits, then the 31-bit index
 |-
 | Parent fingerprint || 32 || — || The 32-bit fingerprint, unpadded
 |-
@@ -165,34 +165,13 @@ bech32 from bech32m, and <code>s</code> is codex32's own secret index.
 
 ===Trailing derivation steps===
 
-A BIP-0380 <code>KEY</code> expression is origin, key, ''and'' trailing derivation steps, so a key alone does not
-rebuild a descriptor. The 3 bits between the hardened flag and the index carry the common suffixes, which costs no
-characters:
+A BIP-0380 <code>KEY</code> expression may have trailing derivation steps after an extended key. These steps MUST
+remain outside this encoding, using BIP-0380 syntax. The three bits between the hardened flag and the 31-bit child
+index MUST be zero when encoding; decoders MUST reject a nonzero value. They do not represent trailing derivation
+steps. A descriptor parser applies any steps written after the encoded key exactly once, as it does for a BIP-0032
+extended key.
 
-{| class="wikitable"
-! Bits !! Suffix !! Bits !! Suffix
-|-
-| <code>000</code> || none, a bare key || <code>011</code> || <code>/1/*</code>
-|-
-| <code>001</code> || <code>/&lt;0;1&gt;/*</code> || <code>100</code> || <code>/*</code>
-|-
-| <code>010</code> || <code>/0/*</code> || <code>101</code>–<code>111</code> || reserved
-|}
-
-This covers the suffixes descriptors actually use and nothing more. Any other suffix, including multi-step paths and
-multipath tuples other than <code>&lt;0;1&gt;</code>, is not representable and MUST be carried alongside the string.
-Encoders MUST NOT approximate one suffix with another.
-
-Suffix <code>000</code> leaves the first character of the field reading as before, so a bare key and a master key are
-unaffected; a suffixed key changes it, which is correct, since it is no longer the same object.
-
-These 3 bits are not human-readable, so they are not a replacement for writing the suffix out. Implementations MAY
-continue to carry the suffix alongside the string in its BIP-0380 form, and SHOULD do so wherever a person has to
-read it. The encoded copy then serves as a correction oracle for the written one: the checksum covers the bits, so a
-suffix that has been mistranscribed or lost can be recovered from the string rather than guessed at, which is
-exactly the failure the rest of this document exists to address.
-
-The remaining bits inside the child number are specified as fixed values rather than as a CRC. A CRC placed before the index would mix into the hardened flag's character and destroy the
+The three zero bits are specified as fixed values rather than as a CRC. A CRC placed before the index would mix into the hardened flag's character and destroy the
 <code>q</code>/<code>s</code> distinction; placed after the index it would mix into the low-order character, which is
 exactly where small indices live, so common indices would no longer read as themselves. The detection it would add is
 small: the codex32 checksum already detects any single-character error, and 2 further bits mainly reduce the chance
@@ -641,7 +620,8 @@ To be written. They are required before this document can be considered complete
 payload layouts stop moving, since every vector would otherwise need recomputing. They must cover, for each profile:
 the bit packing of a known key, the CRC or parity value, the <code>wf</code> status characters for all four
 network and compression combinations, an extended key at depth zero and one at depth greater than zero with a
-hardened child number, each defined derivation suffix, and invalid cases for a wrong CRC, a reserved suffix value and
+hardened child number, trailing derivation steps outside the key string, and invalid cases for a wrong CRC, nonzero
+child-number padding and
 an unrecognised HRP.
 
 <references />
