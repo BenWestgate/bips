@@ -74,12 +74,14 @@ def _to_symbols(bits: str) -> list[int]:
 
 
 def _crc(bits: str, width: int) -> str:
-    """Systematic CRC: remainder of M * x**width, MSB first."""
-    polynomial = {1: 0b11, 3: 0b1011, 4: 0b10011}[width]
-    value = int(bits + "0" * width, 2)
+    """Spare-bit CRC: remainder of (1 || M) * x**width, MSB first, XOR all ones above width 1."""
+    polynomial = (1 << width) | 3
+    value = int("1" + bits + "0" * width, 2)
     for shift in range(value.bit_length() - width - 1, -1, -1):
         if value & (1 << (shift + width)):
             value ^= polynomial << shift
+    if width > 1:
+        value ^= (1 << width) - 1
     return _bits(value, width)
 
 
