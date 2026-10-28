@@ -47,12 +47,16 @@ followed by the 256-bit x-coordinate most significant bit first.
 
 Every payload is packed into 5-bit symbols most significant bit first, each symbol's most significant bit being the
 earlier payload bit. Every payload is fixed length, so the spare bits left over in its final symbol are always present,
-and their contents are specified rather than left as padding.
+and their contents are specified rather than left as padding. These layouts describe the secret, share index
+<code>s</code>, whether unshared or recovered. Every other share's payload is random, and implementations MUST NOT apply
+this document's payload rules to it.
 
-Where the table below says CRC-''n'', the spare bits hold <code>M(x) * x^n mod (x^n + x + 1)</code> for ''n'' of 3 or 4,
-where the coefficients of <code>M(x)</code> are a 1 followed by every payload bit preceding the spare bits, most
-significant first, and the result is XORed with ''n'' one bits. A parity bit is the same construction at width 1,
-generator <code>x + 1</code>, with no final XOR.
+The spare-bit CRC of width ''n'', for ''n'' from 1 to 4, is <code>M(x) * x^n mod G(x)</code> XORed with ''n'' one bits.
+The coefficients of <code>M(x)</code> are a 1 followed by every payload bit preceding the spare bits, most significant
+first. <code>G(x)</code> is the integer <code>(1 &lt;&lt; n) | 3</code>: <code>x^n + x + 1</code>, or
+<code>x + 1</code> at width 1. At width 1 there is no final XOR, so the bit, called parity below, gives the payload an
+odd number of one bits. Where the table below says CRC-''n'' or parity, the spare bits hold this CRC. Other codex32
+applications MAY fill their spare bits the same way.
 
 {| class="wikitable"
 ! HRP !! Key material !! Payload bits !! Symbols !! Spare bits !! Spare bits carry !! String length
@@ -68,8 +72,6 @@ generator <code>x + 1</code>, with no final XOR.
 | <code>xpub</code>/<code>tpub</code> || Extended public key || 585 || 117 || 0 || — || 143
 |-
 | <code>xprv</code>/<code>tprv</code> || Extended private key || 584 || 117 || 1 || parity || 143
-|-
-| <code>nr</code> || Node root: chain code and scalar || 512 || 103 || 3 || CRC-3, or unconstrained || 127
 |}
 
 ===Extended key fields===
@@ -113,11 +115,13 @@ number carry the common suffixes:
 |}
 
 Any other suffix, including multi-step paths and multipath tuples other than <code>&lt;0;1&gt;</code>, is not
-representable and MUST be carried alongside the string. Encoders MUST NOT approximate one suffix with another.
+representable and MUST be carried alongside a string whose suffix bits are <code>000</code>. Encoders MUST NOT
+approximate one suffix with another.
 
 These bits are not human-readable. Implementations MAY continue to carry the suffix alongside the string in its BIP-0380
 form, and SHOULD do so wherever a person has to read it; the encoded copy then lets a mistranscribed or lost written
-suffix be recovered rather than guessed at.
+suffix be recovered rather than guessed at. A suffix carried alongside nonzero suffix bits is applied once, and
+decoders MUST reject the expression if it differs from the encoded suffix.
 
 ===Private keys===
 
@@ -144,7 +148,7 @@ character, and the two statuses within a network are 2 bits apart.
 ===Error correction===
 
 Implementations MUST NOT correct the human-readable part. Implementations SHOULD NOT correct the status character of a
-<code>wf</code> string, and SHOULD report a correction that would change it rather than applying it.
+<code>wf</code> secret, and SHOULD report a correction that would change it rather than applying it.
 
 ===Identifier===
 
@@ -165,22 +169,15 @@ way.
 {| class="wikitable"
 ! Profile !! Freely generatable? !! Constraint on a drawn payload !! Expected draws
 |-
-| <code>nr</code>, spare bits unconstrained || Yes || None || 1
+| <code>wf</code> || Yes || 4 status bits must match the chosen status || 16
 |-
-| <code>nr</code> with CRC-3 || Yes || 3 bits must match || 8
-|-
-| <code>wf</code> || Yes || 4 status bits must be one of 4 valid patterns || 4
-|-
-| <code>xprv</code>/<code>tprv</code> || In principle || Depth, parent fingerprint and child number must all be zero || about 2<sup>72</sup>
+| <code>xprv</code>/<code>tprv</code> || In principle || Depth, parent fingerprint and child number zero, parity matching || about 2<sup>73</sup>
 |-
 | <code>pk</code>, <code>xo</code>, <code>xpub</code>, <code>tpub</code> || No || Result has no known private key || —
 |}
 
-A freshly generated extended private key is a master key whose metadata must be zero, so <code>nr</code> is the profile
-for a fresh root and <code>xprv</code> is for keys that already exist.
-
-A CRC constrains the recovered secret, not the individual shares, so the expected draws above apply to the interpolated
-result. A repeated share index is a degenerate input that an implementation must reject before any CRC is consulted.
+The status is chosen first, and the last share is redrawn until the recovered secret carries it. A fresh master key
+comes from a fresh <code>ms</code> seed, so <code>xprv</code> is for keys that already exist.
 
 ==Rationale==
 
@@ -192,18 +189,19 @@ in a script are interchangeable in shape.
 '''CRCs.''' BIP-0173 places commonly confused characters one bit apart (<code>2</code>/<code>z</code>,
 <code>5</code>/<code>s</code>, <code>m</code>/<code>n</code> and others), and these CRCs detect every single-bit error:
 over random payloads, CRC-3 catches 90.3% of all substitutions against 87.5% by chance, and CRC-4 96.8% against 93.8%.
-<code>x^3 + x + 1</code> is optimal at width 3, and <code>x^4 + x + 1</code> is preferred to
-<code>x^4 + x^3 + x^2 + x + 1</code>, whose period of 5 misses 2-bit errors at the same position in different
-characters. Covering every bit before the spare bits is free, since the flipped bits of one character are at most 4
-apart, within both periods. The leading 1, which bech32 and codex32 checksums also start from, makes zero bits added in
-front of the covered bits change the CRC, and the final XOR does the same for zeros inserted between the payload and the
-checksum, in both cases unless the number of inserted bits is a multiple of the generator's period. Without the final
-XOR, a payload followed by zeros would pass whenever the longer length has the same CRC width, as 192-bit and 512-bit ms
-seeds would if they used this CRC. Every nonzero final XOR is equally good at this, and all ones also keeps an all-zero
-payload failing at every length specified here. A parity bit can detect neither insertion, so it takes no final XOR,
-which keeps an all-zero payload failing. Because the CRC-valid payloads are not closed under GF(32) interpolation, a CRC
-checks the recovered secret rather than each share, so it catches a recovery from wrong, too few or mixed shares, which
-the checksum cannot.
+<code>x^n + x + 1</code> is primitive at widths 2 to 4, so its period of 2<sup>''n''</sup> - 1 is the longest possible,
+and covering every bit before the spare bits is free, since the flipped bits of one character are at most 4 apart. The
+leading 1, which bech32 and codex32 checksums also start from, makes zero bits added in front of the covered bits change
+the CRC. The final XOR does the same for zeros added after the spare bits, which would otherwise pass whenever a longer
+length of the same HRP has the same width, as 192-bit and 512-bit <code>ms</code> seeds do. Either insertion passes only
+if the number of added bits is a multiple of the period. Any nonzero final XOR catches the second, so the all-zero
+payload chooses among them: it passes exactly when the final XOR equals <code>x^(5k) mod G(x)</code> for its ''k''
+symbols. At width 4 those values are only <code>1</code>, <code>x^2 + x</code> and <code>x^2 + x + 1</code>, so all ones
+fails every all-zero payload. At widths 2 and 3 every nonzero value passes one length in 3 or 7, and all ones passes
+none of the lengths used by <code>ms</code>, <code>cl</code> or this document. A parity bit can detect neither
+insertion, so it takes no final XOR, which keeps every all-zero payload failing. Because the CRC-valid payloads are not
+closed under GF(32) interpolation, a CRC checks the recovered secret rather than each share, so it catches a recovery
+from wrong or mixed shares, which the checksum cannot.
 
 '''Extended key layout.''' Putting the child number before the fingerprint aligns both readable fields at 143 characters
 with a depth ceiling of 31; BIP-0032's order needs a 3-bit depth to reach 143, and 142 characters needs a 3-bit depth
@@ -231,22 +229,21 @@ decoder repairing one symbol could turn a private key into a public one.
 * <code>wf</code> is WIF without the excluded <code>i</code>. <code>se</code>, <code>sv</code> and <code>sd</code> are
   one from <code>sp</code>, and <code>pr</code>, <code>pv</code> and <code>sk</code> are one from <code>pk</code>. A
   <code>twif</code> would share the shape of <code>tpub</code> while holding something else.
-* <code>nr</code> matters most, since a 64-byte <code>ms</code> seed and a root node are both 127 characters and only
-  the HRP tells them apart. <code>mn</code> is one from <code>ms</code> and <code>ln</code>, <code>rn</code> is one from
-  <code>ln</code>, and <code>cc</code> is one from <code>bc</code> and <code>cl</code>; of the names that clear the
-  rule, only "node root" carries both senses.
 * [https://lists.linuxfoundation.org/pipermail/bitcoin-dev/2018-May/016038.html Bech32X] (2018, never implemented) used
-  <code>pk</code> for a mainnet ''private'' key, which is why the private-key HRP is kept far from it. Its
-  <code>xp</code> payload equals <code>nr</code>, but <code>xp</code> is one from <code>sp</code> and <code>xo</code>.
+  <code>pk</code> for a mainnet ''private'' key, which is why the private-key HRP is kept far from it.
   [[bip-0178.mediawiki|BIP-0178]] records a key's script type and stays in base58.
 
 '''Identifiers.''' An identifier computed from the key can be recomputed by anyone who later learns it. The BIP-0032
 fingerprint links a share to P2PKH and P2WPKH outputs for <code>pk</code> and <code>wf</code>, to shared key origin
-information for extended keys and <code>nr</code>, and to a Taproot output for <code>xo</code> once a script path
+information for extended keys, and to a Taproot output for <code>xo</code> once a script path
 reveals the internal key.
 
 '''Fresh public keys.''' Interpolating random shares to a public key yields a point whose discrete logarithm nobody
 knows, so funds paid to it are unspendable.
+
+'''Root nodes.''' A BIP-0032 root node is an <code>xprv</code> at depth zero, so it gets no HRP of its own, which would
+be a second encoding of the same key. Shorter root-only codex32 formats, such as Coinkite's CX1, remain available to
+those who want one.
 
 '''QR size.''' An uppercase codex32 string is entirely within QR's alphanumeric character set, at 5.5 bits per character
 against 8 in byte mode. Measured with a QR encoder at error-correction level L:
@@ -288,12 +285,11 @@ decode an unrecognised HRP under a known layout.
 Encoders SHOULD upper-case a codex32 string before encoding it, since a lower-case string forces byte mode and forfeits
 the alphanumeric saving.
 
-Where a key carries BIP-0380 key origin information, encoders SHOULD segment rather than encode the concatenation in one
-mode. Once the origin is upper-cased and written with <code>h</code> rather than <code>'</code> for hardened steps, only
-<code>[</code> and <code>]</code> fall outside the alphanumeric set, so each bracket takes a one-character byte segment
-and everything else alphanumeric segments. For a 143-character extended key with a four-step origin this is 946 bits
-against 1308 for a single byte-mode segment, version 7 rather than 8. Segmentation is ordinary QR, so nothing is
-required of decoders.
+Where a key carries BIP-0380 key origin information, encoders SHOULD put the origin in a byte-mode segment and the
+upper-cased key in an alphanumeric one, rather than encode the concatenation in one mode. The origin stays as written,
+since BIP-0380 rejects an upper-case hardened marker. For a 143-character extended key with a four-step origin this is
+996 bits against 1340 for a single byte-mode segment, version 6 rather than 8 at level L. Segmentation is ordinary QR,
+so nothing is required of decoders.
 
 ==Backwards compatibility==
 
@@ -310,8 +306,6 @@ wherever they are accepted today.
 * Whether to pad the fingerprint as well, at 144 characters, to free 2 bits for a CRC over the extended key metadata.
 * Key origin information: a bracketed BIP-0380 prefix outside the codex32 string, or folded into the HRP. Folding is the
   larger QR saving for a cosigner-heavy descriptor; a bare key is where the one-version saving comes from.
-* Whether <code>nr</code> should constrain its spare bits to a CRC-3 or leave them unconstrained. Only the unconstrained
-  form can be produced by BIP-0093's fresh-share procedure.
 * Whether the extended-key HRPs should stay 4 characters, given that <code>xprv</code> and <code>tprv</code> are then
   told apart by content rather than by shape.
 
