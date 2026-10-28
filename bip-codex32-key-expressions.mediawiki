@@ -49,7 +49,8 @@ Every payload is packed into 5-bit symbols most significant bit first, each symb
 earlier payload bit. Every payload is fixed length, so the spare bits left over in its final symbol are always present,
 and their contents are specified rather than left as padding. These layouts describe the secret, share index
 <code>s</code>, whether unshared or recovered. Every other share's payload is random, and implementations MUST NOT apply
-this document's payload rules to it.
+this document's payload rules to it. Shares keep every bit of every symbol, spare bits included, since all of them
+take part in interpolation.
 
 The spare-bit CRC of width ''n'', for ''n'' from 1 to 4, is <code>M(x) * x^n mod G(x)</code> XORed with ''n'' one bits.
 The coefficients of <code>M(x)</code> are a 1 followed by every payload bit preceding the spare bits, most significant
@@ -83,7 +84,7 @@ Extended keys carry BIP-0032's fields in this order, which places the child numb
 |-
 | Depth || 5 || 1 || Values 0 to 31
 |-
-| Child number || 35 || 7 || Hardened flag, then 3 suffix bits, then the 31-bit index
+| Child number || 35 || 7 || Hardened flag, then 3 zero bits, then the 31-bit index
 |-
 | Parent fingerprint || 32 || — || The 32-bit fingerprint, unpadded
 |-
@@ -95,33 +96,15 @@ Extended keys carry BIP-0032's fields in this order, which places the child numb
 An extended public key is 585 bits, exactly 117 symbols. An extended private key is 584 bits in the same 117 symbols,
 with one spare bit at the end carrying a parity of the rest. Both are 143 characters.
 
-The first eight characters are readable: one for depth and seven for the child number. For a bare key, unhardened index
-0 reads <code>qqqqqqq</code>, hardened index 0 reads <code>sqqqqqq</code>, and index 1 ends in <code>p</code> instead of
+The first eight characters are readable: one for depth and seven for the child number. Unhardened index 0
+reads <code>qqqqqqq</code>, hardened index 0 reads <code>sqqqqqq</code>, and index 1 ends in <code>p</code> instead of
 <code>q</code>.
 
 ===Trailing derivation steps===
 
-A BIP-0380 <code>KEY</code> expression is origin, key ''and'' trailing derivation steps. The 3 suffix bits in the child
-number carry the common suffixes:
-
-{| class="wikitable"
-! Bits !! Suffix !! Bits !! Suffix
-|-
-| <code>000</code> || none, a bare key || <code>011</code> || <code>/1/*</code>
-|-
-| <code>001</code> || <code>/&lt;0;1&gt;/*</code> || <code>100</code> || <code>/*</code>
-|-
-| <code>010</code> || <code>/0/*</code> || <code>101</code>–<code>111</code> || reserved
-|}
-
-Any other suffix, including multi-step paths and multipath tuples other than <code>&lt;0;1&gt;</code>, is not
-representable and MUST be carried alongside a string whose suffix bits are <code>000</code>. Encoders MUST NOT
-approximate one suffix with another.
-
-These bits are not human-readable. Implementations MAY continue to carry the suffix alongside the string in its BIP-0380
-form, and SHOULD do so wherever a person has to read it; the encoded copy then lets a mistranscribed or lost written
-suffix be recovered rather than guessed at. A suffix carried alongside nonzero suffix bits is applied once, and
-decoders MUST reject the expression if it differs from the encoded suffix.
+Trailing derivation steps after an extended key MUST remain outside the string, in BIP-0380 syntax, and are applied
+exactly once, as for a base58 extended key. The 3 zero bits in the child number MUST be zero when encoding, and decoders
+MUST reject a nonzero value.
 
 ===Private keys===
 
@@ -205,9 +188,9 @@ from wrong or mixed shares, which the checksum cannot.
 
 '''Extended key layout.''' Putting the child number before the fingerprint aligns both readable fields at 143 characters
 with a depth ceiling of 31; BIP-0032's order needs a 3-bit depth to reach 143, and 142 characters needs a 3-bit depth
-and no alignment, against real paths that reach depth 6. The flag-suffix-index split makes the hardened flag read
+and no alignment, against real paths that reach depth 6. The flag-padding-index split makes the hardened flag read
 <code>s</code>, where right-aligning gives <code>z</code> and left-aligning turns index 1 into <code>g</code>. The
-suffix bits are fixed rather than a CRC because a CRC would mix into the characters that make the child number readable,
+zero bits are fixed rather than a CRC because a CRC would mix into the characters that make the child number readable,
 and the chain code and fingerprint are left unaligned because aligning noise buys nothing.
 
 '''Status codes.''' Network confusion is unrecoverable and compression confusion is not, so the codes maximise distance
@@ -313,5 +296,5 @@ wherever they are accepted today.
 
 To be written once the payload layouts stop moving. They must cover, for each profile: the bit packing of a known key,
 the CRC or parity value, the <code>wf</code> status characters for all four network and compression combinations, an
-extended key at depth zero and one at depth greater than zero with a hardened child number, each defined derivation
-suffix, and invalid cases for a wrong CRC, a reserved suffix value and an unrecognised HRP.
+extended key at depth zero and one at depth greater than zero with a hardened child number, trailing derivation steps
+outside the string, and invalid cases for a wrong CRC, nonzero child-number padding and an unrecognised HRP.
