@@ -3,9 +3,17 @@
 import unittest
 from dataclasses import replace
 
-from codex32 import CodexError
+from codex32 import CodexError, derive_share, parse_codex32
 from codex32.bech32 import CHARSET, bech32_encode
 from codex32.checksums import _CODEX32, _CODEX32_LONG
+from codex32.errors import (
+    DuplicateShareIndex,
+    InvalidChecksum,
+    MismatchedHrp,
+    MismatchedIdentifier,
+    MismatchedThreshold,
+    WrongShareCount,
+)
 
 from reference import (
     VERSIONS,
@@ -19,6 +27,7 @@ from reference import (
     encode_xonly_key,
     extended_from_base58,
     extended_to_base58,
+    recover_key,
     wif_from_base58,
     wif_to_base58,
 )
@@ -65,6 +74,20 @@ UNCOMPRESSED = bytes.fromhex(
     "0479be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798"
     "483ada7726a3c4655da4fbfc0e1108a8fd17b448a68554199c47d08ffb10d4b8"
 )
+
+
+def _codex32(hrp, header, payload):
+    data = [CHARSET.index(char) for char in header] + list(payload)
+    checksum = _CODEX32 if 2 * len(hrp) + 1 + len(data) + _CODEX32.length <= 93 else _CODEX32_LONG
+    return bech32_encode(hrp, data, checksum)
+
+
+def _split(secret, *payloads, count):
+    """Choose the payloads of the first k - 1 shares, then derive the rest as in BIP93."""
+    hrp, data = secret.split("1", 1)
+    chosen = [_codex32(hrp, data[:5] + index, payload) for index, payload in zip("ac", payloads)]
+    basis = [parse_codex32(text) for text in (secret, *chosen)]
+    return chosen + [derive_share(basis, index).text for index in "acdefgh"[len(chosen) : count]]
 
 
 class ReferenceTests(unittest.TestCase):
@@ -155,6 +178,57 @@ class ReferenceTests(unittest.TestCase):
             ):
                 with self.assertRaisesRegex(InvalidKey, "master metadata"):
                     convert(value)
+
+    def test_recovery_ignores_share_payload_rules(self):
+        xprv = extended_from_base58(XPRV)
+        wif = encode_private_key(xprv.key, network="main", compressed=True, identifier="keys", threshold=2)
+        public = encode_public_key(GENERATOR, identifier="pkey", threshold=2)
+        public_payload = parse_codex32(public).payload_symbols
+        extended = encode_extended_key(xprv, identifier="xprv", threshold=3)
+        sets = (
+            (wif, (((23,) + (31,) * 51, "scalar"),)),
+            (public, ((public_payload[:-1] + (public_payload[-1] ^ 1,), "CRC"),)),
+            (extended, (((31,) * 117, "padding"), ((31, 17) + (31,) * 115, "parity"))),
+        )
+        for secret, chosen in sets:
+            # Each chosen payload would be rejected as a secret.
+            for payload, reason in chosen:
+                with self.assertRaisesRegex(InvalidKey, reason):
+                    decode_key(_codex32(secret.split("1")[0], "0qqqqs", payload))
+            shares = _split(secret, *(payload for payload, _ in chosen), count=5)
+            for share in shares:
+                with self.assertRaisesRegex(InvalidKey, "recover the secret first"):
+                    decode_key(share)
+            threshold = len(chosen) + 1
+            for start in range(len(shares) - threshold + 1):
+                self.assertEqual(recover_key(shares[start : start + threshold]), decode_key(secret))
+
+    def test_recovery_rejects_bad_sets(self):
+        scalar = extended_from_base58(XPRV).key
+        payload = (23,) + (31,) * 51
+
+        def wif(identifier="keys", threshold=2):
+            return encode_private_key(
+                scalar, network="main", compressed=True, identifier=identifier, threshold=threshold
+            )
+
+        secret = wif()
+        a, c, d = _split(secret, payload, count=3)
+        other_identifier = _split(wif(identifier="cafe"), payload, count=2)[1]
+        other_hrp = _split(encode_public_key(GENERATOR, identifier="keys", threshold=2), payload, count=2)[1]
+        other_threshold = _split(wif(threshold=3), payload, payload, count=3)[2]
+        for shares, error in (
+            ([a], WrongShareCount),
+            ([a, c, d], WrongShareCount),
+            ([a, a], DuplicateShareIndex),
+            ([a, other_identifier], MismatchedIdentifier),
+            ([a, other_hrp], MismatchedHrp),
+            ([a, other_threshold], MismatchedThreshold),
+            ([a, c[:-1] + ("q" if c[-1] != "q" else "p")], InvalidChecksum),
+            ([secret, c], InvalidKey),
+        ):
+            with self.assertRaises(error):
+                recover_key(shares)
 
     def test_wrong_external_checksum(self):
         key = encode_public_key(GENERATOR)
