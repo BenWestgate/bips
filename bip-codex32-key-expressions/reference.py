@@ -314,6 +314,8 @@ def extended_to_base58(key: ExtendedKey) -> str:
         raise InvalidKey("invalid BIP32 metadata")
     if not 0 <= key.child_number < 1 << 32:
         raise InvalidKey("child number must be uint32")
+    if key.depth == 0 and (key.parent_fingerprint != b"\0" * 4 or key.child_number != 0):
+        raise InvalidKey("master metadata must be zero")
     if key.kind.endswith("pub"):
         _check_point(key.key)
         if len(key.key) != 33:
