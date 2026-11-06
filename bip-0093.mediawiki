@@ -440,7 +440,8 @@ If the prefix is damaged and a user is guessing that the data might be using thi
 
 <references />
 
-===Not BIP-0039 Entropy===
+<span id="Not_BIP-0039_Entropy"></span>
+===Not BIP-0039 entropy===
 
 Instead of encoding a BIP-0032 master seed, an alternative would be to encode BIP-0039 entropy.
 However this alternative approach is fraught with difficulties.
@@ -472,9 +473,10 @@ The main advantage of this alternative approach would be that wallets could give
 In practice, we do not expect users in switch back and forth between backup formats, and instead just generate a fresh master seed using Codex32.
 
 Seeing little value with BIP-0039 compatibility (English-only), all the difficulties with BIP-0039 language choice, not to mention the PBKDF2 overhead of using BIP-0039, we think it is best to abandon BIP-0039 and encode BIP-0032 master seeds directly.
-Our approach is semi-convertible with BIP-0039's 512-bit master seeds (in all languages, see [[#Backwards_Compatibility|Backwards Compatibility]]) and interconvertible with SLIP-0039 master seeds or any other encoding of BIP-0032 master seeds with a supported length.
+Our approach is semi-convertible with BIP-0039's 512-bit master seeds (in all languages, see [[#Backwards_Compatibility|Backwards compatibility]]) and interconvertible with SLIP-0039 master seeds or any other encoding of BIP-0032 master seeds with a supported length.
 
-==Backwards Compatibility==
+<span id="Backwards_Compatibility"></span>
+==Backwards compatibility==
 
 Earlier revisions accepted every master seed length from 16 through 64 bytes using regular checksum up to 93 data characters and long checksum from 96 data characters.
 This revision retains 16-, 20-, 24-, 28-, 32-, and 64-byte master seeds.
@@ -491,13 +493,15 @@ However, SLIP-0039 '''shares''' cannot be converted to codex32 shares because th
 The authors of this BIP do not recommend interconversion.
 Instead, users who wish to switch to codex32 should generate a fresh seed and sweep their coins.
 
-==Reference Implementation==
+<span id="Reference_Implementation"></span>
+==Reference implementation==
 
 The inline code in this BIP text provides Python reference implementations of the checksum and interpolation primitives.
 A complete Python implementation is available in the [https://github.com/BenWestgate/python-codex32 python-codex32 repository].
 The [https://github.com/BlockstreamResearch/codex32 original project repository] contains implementations in Rust and PostScript.
 
-==Test Vectors==
+<span id="Test_Vectors"></span>
+==Test vectors==
 
 ===Test vector 1===
 
@@ -700,7 +704,8 @@ These examples all incorrectly mix upper and lower case characters.
 
 ==Appendix==
 
-===Mathematical Companion===
+<span id="Mathematical_Companion"></span>
+===Mathematical companion===
 
 Below we use the bech32 character set to denote values in GF[32].
 In bech32, the letter <code>Q</code> denotes zero and the letter <code>P</code> denotes one.
