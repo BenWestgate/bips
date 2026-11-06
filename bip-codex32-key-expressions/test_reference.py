@@ -133,7 +133,7 @@ class ReferenceTests(unittest.TestCase):
             self.assertEqual(key.child_number, 0)
             self.assertEqual(extended_to_base58(key), serialized)
             encoded = encode_extended_key(key)
-            self.assertEqual(len(encoded), 143)
+            self.assertEqual(len(encoded), 144)
             self.assertEqual(decode_key(encoded).key, key)
 
     def test_hardened_child_and_padding(self):
@@ -143,11 +143,16 @@ class ReferenceTests(unittest.TestCase):
         )
         encoded = encode_extended_key(hardened)
         self.assertEqual(decode_key(encoded).key, hardened)
-        self.assertEqual(encoded[encoded.index("1") + 8], "s")
+        self.assertEqual(encoded[encoded.index("1") + 9], "s")
+        for depth in (1, 31, 32, 255):
+            deep = replace(hardened, depth=depth)
+            self.assertEqual(decode_key(encode_extended_key(deep)).key, deep)
         with self.assertRaises(InvalidKey):
-            encode_extended_key(
-                ExtendedKey(key.kind, 32, key.parent_fingerprint, key.child_number, key.chain_code, key.key)
-            )
+            encode_extended_key(replace(hardened, depth=256))
+        data = [CHARSET.index(char) for char in encoded.split("1", 1)[1][:-15]]
+        data[6:8] = [0b01000, 0]  # Depth 1 becomes 256, with the same parity.
+        with self.assertRaisesRegex(InvalidKey, "depth exceeds 255"):
+            decode_key(bech32_encode("xprv", data, _CODEX32_LONG))
 
     def test_invalid_base58(self):
         for serialized in INVALID_BASE58:
@@ -166,10 +171,10 @@ class ReferenceTests(unittest.TestCase):
                 + key.chain_code
                 + key.key
             )
-            # Encode at depth 1, then zero the depth, the first payload symbol.
+            # Encode at depth 1, then zero the depth, the first two payload symbols.
             encoded = encode_extended_key(replace(key, depth=1))
             data = [CHARSET.index(char) for char in encoded.split("1", 1)[1][:-15]]
-            data[6] = 0
+            data[6:8] = [0, 0]
             for convert, value in (
                 (extended_to_base58, key),
                 (encode_extended_key, key),
@@ -188,7 +193,7 @@ class ReferenceTests(unittest.TestCase):
         sets = (
             (wif, (((23,) + (31,) * 51, "scalar"),)),
             (public, ((public_payload[:-1] + (public_payload[-1] ^ 1,), "CRC"),)),
-            (extended, (((31,) * 117, "padding"), ((31, 17) + (31,) * 115, "parity"))),
+            (extended, (((31,) * 118, "padding"), ((7, 31, 17) + (31,) * 114 + (30,), "parity"))),
         )
         for secret, chosen in sets:
             # Each chosen payload would be rejected as a secret.
@@ -244,7 +249,7 @@ class ReferenceTests(unittest.TestCase):
 
         extended = encode_extended_key(extended_from_base58(XPUB))
         data = [CHARSET.index(char) for char in extended.split("1", 1)[1][:-15]]
-        data[6 + 1] ^= 0b01000  # First reserved bit in the child-number field.
+        data[6 + 2] ^= 0b01000  # First reserved bit in the child-number field.
         with self.assertRaisesRegex(InvalidKey, "padding"):
             decode_key(bech32_encode("xpub", data, _CODEX32_LONG))
 

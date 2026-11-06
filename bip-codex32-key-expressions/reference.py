@@ -161,8 +161,8 @@ def encode_private_key(
 def encode_extended_key(key: ExtendedKey, *, identifier: str = "qqqq", threshold: int = 0) -> str:
     if key.kind not in VERSIONS:
         raise InvalidKey("unknown extended-key kind")
-    if not 0 <= key.depth <= 31:
-        raise InvalidKey("draft encoding permits depth 0 through 31")
+    if not 0 <= key.depth <= 255:
+        raise InvalidKey("depth must be 0 through 255")
     if len(key.parent_fingerprint) != 4 or len(key.chain_code) != 32:
         raise InvalidKey("parent fingerprint must be 4 bytes and chain code 32 bytes")
     if not 0 <= key.child_number < 1 << 32:
@@ -170,7 +170,7 @@ def encode_extended_key(key: ExtendedKey, *, identifier: str = "qqqq", threshold
     if key.depth == 0 and (key.parent_fingerprint != b"\0" * 4 or key.child_number != 0):
         raise InvalidKey("master metadata must be zero")
     raw = (
-        _bits(key.depth, 5)
+        _bits(key.depth, 10)
         + _bits(key.child_number >> 31, 1)
         + "000"
         + _bits(key.child_number & 0x7FFFFFFF, 31)
@@ -224,20 +224,22 @@ def decode_key(text: str) -> DecodedKey:
         _check_scalar(scalar)
         return DecodedKey(hrp, scalar, *status)
     if hrp in VERSIONS:
-        if len(bits) != 585 or bits[6:9] != "000":
+        if len(bits) != 590 or bits[11:14] != "000":
             raise InvalidKey("extended-key length or child-number padding is invalid")
-        depth = int(bits[:5], 2)
-        child_number = (int(bits[5], 2) << 31) | int(bits[9:40], 2)
-        fingerprint = int(bits[40:72], 2).to_bytes(4, "big")
-        chain_code = int(bits[72:328], 2).to_bytes(32, "big")
+        depth = int(bits[:10], 2)
+        if depth > 255:
+            raise InvalidKey("depth exceeds 255")
+        child_number = (int(bits[10], 2) << 31) | int(bits[14:45], 2)
+        fingerprint = int(bits[45:77], 2).to_bytes(4, "big")
+        chain_code = int(bits[77:333], 2).to_bytes(32, "big")
         if hrp.endswith("pub"):
-            public_bits = bits[328:]
+            public_bits = bits[333:]
             key = bytes([2 + int(public_bits[0])]) + int(public_bits[1:], 2).to_bytes(32, "big")
             _check_point(key)
         else:
             if bits[-1] != _crc(bits[:-1], 1):
                 raise InvalidKey("extended-private-key parity mismatch")
-            key = int(bits[328:584], 2).to_bytes(32, "big")
+            key = int(bits[333:589], 2).to_bytes(32, "big")
             _check_scalar(key)
         extended = ExtendedKey(hrp, depth, fingerprint, child_number, chain_code, key)
         if depth == 0 and (fingerprint != b"\0" * 4 or child_number != 0):

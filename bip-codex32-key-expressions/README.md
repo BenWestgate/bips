@@ -22,6 +22,6 @@ BIP 93 recovery with exactly the declared threshold and then validates the
 recovered key. Key origins and trailing derivation paths are descriptor syntax
 outside the encoded key. There is no Bitcoin Core wallet integration here.
 
-The format is still a draft. In particular, depth is currently limited to 31,
-the key-origin location is unresolved, and the test suite is an initial set of
-round trips and negative cases rather than the complete normative vector set.
+The format is still a draft. In particular, the key-origin location is
+unresolved, and the test suite is an initial set of round trips and negative
+cases rather than the complete normative vector set.

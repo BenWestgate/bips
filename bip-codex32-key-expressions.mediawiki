@@ -70,9 +70,9 @@ applications MAY fill their spare bits the same way.
 |-
 | <code>wf</code> || Private key, any network || 256 || 52 || 4 || network and compression status || 74
 |-
-| <code>xpub</code>/<code>tpub</code> || Extended public key || 585 || 117 || 0 || — || 143
+| <code>xpub</code>/<code>tpub</code> || Extended public key || 590 || 118 || 0 || — || 144
 |-
-| <code>xprv</code>/<code>tprv</code> || Extended private key || 584 || 117 || 1 || parity || 143
+| <code>xprv</code>/<code>tprv</code> || Extended private key || 589 || 118 || 1 || parity || 144
 |}
 
 ===Extended key fields===
@@ -82,21 +82,21 @@ Extended keys carry BIP-0032's fields in this order, which places the child numb
 {| class="wikitable"
 ! Field !! Bits !! Characters !! Contents
 |-
-| Depth || 5 || 1 || Values 0 to 31
+| Depth || 10 || 2 || Values 0 to 255
 |-
 | Child number || 35 || 7 || Hardened flag, then 3 zero bits, then the 31-bit index
 |-
 | Parent fingerprint || 32 || — || The 32-bit fingerprint, unpadded
 |-
-| Chain code || 256 || — || Begins at bit 72 in both the public and private forms
+| Chain code || 256 || — || Begins at bit 77 in both the public and private forms
 |-
 | Key || 257 or 256 || — || <code>serP(K)</code> as 257 bits, or the scalar as 256
 |}
 
-An extended public key is 585 bits, exactly 117 symbols. An extended private key is 584 bits in the same 117 symbols,
-with one spare bit at the end carrying a parity of the rest. Both are 143 characters.
+An extended public key is 590 bits, exactly 118 symbols. An extended private key is 589 bits in the same 118 symbols,
+with one spare bit at the end carrying a parity of the rest. Both are 144 characters.
 
-The first eight characters are readable: one for depth and seven for the child number. Unhardened index 0
+The first nine characters are readable: two for depth and seven for the child number. Unhardened index 0
 reads <code>qqqqqqq</code>, hardened index 0 reads <code>sqqqqqq</code>, and index 1 ends in <code>p</code> instead of
 <code>q</code>.
 
@@ -104,7 +104,7 @@ reads <code>qqqqqqq</code>, hardened index 0 reads <code>sqqqqqq</code>, and ind
 
 Trailing derivation steps after an extended key MUST remain outside the string, in BIP-0380 syntax, and are applied
 exactly once, as for a base58 extended key. The 3 zero bits in the child number MUST be zero when encoding, and decoders
-MUST reject a nonzero value.
+MUST reject a nonzero value or a depth above 255.
 
 ===Private keys===
 
@@ -154,7 +154,7 @@ way.
 |-
 | <code>wf</code> || Yes || 4 status bits must match the chosen status || 16
 |-
-| <code>xprv</code>/<code>tprv</code> || In principle || Depth, parent fingerprint and child number zero, parity matching || about 2<sup>73</sup>
+| <code>xprv</code>/<code>tprv</code> || In principle || Depth, parent fingerprint and child number zero, parity matching || about 2<sup>78</sup>
 |-
 | <code>pk</code>, <code>xo</code>, <code>xpub</code>, <code>tpub</code> || No || Result has no known private key || —
 |}
@@ -186,9 +186,9 @@ insertion, so it takes no final XOR, which keeps every all-zero payload failing.
 closed under GF(32) interpolation, a CRC checks the recovered secret rather than each share, so it catches a recovery
 from wrong or mixed shares, which the checksum cannot.
 
-'''Extended key layout.''' Putting the child number before the fingerprint aligns both readable fields at 143 characters
-with a depth ceiling of 31; BIP-0032's order needs a 3-bit depth to reach 143, and 142 characters needs a 3-bit depth
-and no alignment, against real paths that reach depth 6. The flag-padding-index split makes the hardened flag read
+'''Extended key layout.''' Putting the child number before the fingerprint aligns both readable fields. Depth takes two
+characters so that every BIP-0032 depth is representable; one character would cap it at 31 and save only the 144th
+character, which costs no QR version. The flag-padding-index split makes the hardened flag read
 <code>s</code>, where right-aligning gives <code>z</code> and left-aligning turns index 1 into <code>g</code>. The
 zero bits are fixed rather than a CRC because a CRC would mix into the characters that make the child number readable,
 and the chain code and fingerprint are left unaligned because aligning noise buys nothing.
@@ -234,7 +234,7 @@ against 8 in byte mode. Measured with a QR encoder at error-correction level L:
 {| class="wikitable"
 ! Key material !! This document !! QR version !! Existing format !! QR version
 |-
-| Extended key || 143 characters || 5 || 111 base58 characters || 6
+| Extended key || 144 characters || 5 || 111 base58 characters || 6
 |-
 | Public key, compressed || 74 characters || 3 || 66 hex characters || 4 lowercase, 3 uppercase
 |-
@@ -284,8 +284,6 @@ wherever they are accepted today.
 
 * Whether to spend a 53rd symbol on a dedicated status character, buying exact parity with WIF's leading characters and
   a CRC-4 at the cost of the shape match with <code>pk</code>.
-* Whether restricting depth to 0-31 is acceptable, or whether it should be padded to 10 bits so that every BIP-0032
-  depth remains representable, at the cost of one character.
 * Whether to pad the fingerprint as well, at 144 characters, to free 2 bits for a CRC over the extended key metadata.
 * Key origin information: a bracketed BIP-0380 prefix outside the codex32 string, or folded into the HRP. Folding is the
   larger QR saving for a cosigner-heavy descriptor; a bare key is where the one-version saving comes from.
