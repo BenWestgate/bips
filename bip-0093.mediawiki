@@ -85,6 +85,14 @@ In particular, given an all uppercase codex32 string, we still use lowercase <co
 For presentation, lowercase is usually preferable, but uppercase SHOULD be used for handwritten codex32 strings.
 If a codex32 string is encoded in a QR code, it SHOULD use the uppercase form, as this is encoded more compactly.
 
+When the share index of a valid codex32 string (converted to lowercase) is the letter "s", we call the string a codex32 secret.
+
+The secret's payload is decoded by application-specific rules.
+
+For an unshared secret, the threshold parameter (the first character of the data part) is ignored (beyond the fact it must be a digit for the codex32 string to be valid).
+We recommend using the digit "0" for the threshold parameter in this case.
+The 4 character identifier also has no effect beyond aiding users in distinguishing between multiple different secrets in cases where they have more than one.
+
 ====Checksum====
 
 The last thirteen characters of a regular codex32 data part form a checksum and contain no information.
@@ -189,31 +197,7 @@ A codex32 string using the long checksum follows the same specification as one u
 
 Generation of long shares and recovery of the long secret from long shares proceeds in exactly the same way as for regular shares with the <code>ms32_interpolate</code> function.
 
-====Error Correction====
-
-A codex32 string without a valid checksum MUST NOT be used.
-Both checksums are designed to correct up to 4 character substitutions or up to 8 unreadable characters (called erasures).
-The regular checksum can also correct up to 13 consecutive erasures, and the long checksum up to 15 consecutive erasures.
-The following recommendations apply to both checksums.
-Implementations SHOULD provide the user with a corrected valid codex32 string if possible.
-However, implementations SHOULD NOT automatically proceed with a corrected codex32 string without user confirmation of the corrected string, either by prompting the user, or returning a corrected string in an error message and allowing the user to repeat their action.
-We do not specify how an implementation should implement error correction. However, we recommend that:
-
-* Implementations make suggestions to substitute non-bech32 characters with bech32 characters in some situations, such as replacing "B" with "8", "O" with "0", "I" with "l", etc.
-* Implementations interpret "?" as an erasure.
-* Implementations optionally interpret other non-bech32 characters, or characters with incorrect case, as erasures.
-* If a string with 8 or fewer erasures can have those erasures filled in to make a valid codex32 string, then the implementation suggests such a string as a correction.
-* If a string consisting of valid bech32 characters in the proper case can be made valid by substituting 4 or fewer characters, then the implementation suggests such a string as a correction.
-
 ===Unshared Secret===
-
-When the share index of a valid codex32 string (converted to lowercase) is the letter "s", we call the string a codex32 secret.
-
-The secret's payload is decoded by application-specific rules.
-
-For an unshared secret, the threshold parameter (the first character of the data part) is ignored (beyond the fact it must be a digit for the codex32 string to be valid).
-We recommend using the digit "0" for the threshold parameter in this case.
-The 4 character identifier also has no effect beyond aiding users in distinguishing between multiple different secrets in cases where they have more than one.
 
 The function <code>ms32_encode</code> constructs a codex32 string with the required <code>ms</code> human-readable part when its argument is the converted data-part characters (excluding the checksum).
 
@@ -245,18 +229,27 @@ def ms32_decode(codex):
     return data[:-13 if MS32_HRP_EXPANDED_LENGTH + len(data) < 94 else -15]
 </source>
 
+====Error Correction====
+
+A codex32 string without a valid checksum MUST NOT be used.
+Both checksums are designed to correct up to 4 character substitutions or up to 8 unreadable characters (called erasures).
+The regular checksum can also correct up to 13 consecutive erasures, and the long checksum up to 15 consecutive erasures.
+The following recommendations apply to both checksums.
+Implementations SHOULD provide the user with a corrected valid codex32 string if possible.
+However, implementations SHOULD NOT automatically proceed with a corrected codex32 string without user confirmation of the corrected string, either by prompting the user, or returning a corrected string in an error message and allowing the user to repeat their action.
+We do not specify how an implementation should implement error correction. However, we recommend that:
+
+* Implementations make suggestions to substitute non-bech32 characters with bech32 characters in some situations, such as replacing "B" with "8", "O" with "0", "I" with "l", etc.
+* Implementations interpret "?" as an erasure.
+* Implementations optionally interpret other non-bech32 characters, or characters with incorrect case, as erasures.
+* If a string with 8 or fewer erasures can have those erasures filled in to make a valid codex32 string, then the implementation suggests such a string as a correction.
+* If a string consisting of valid bech32 characters in the proper case can be made valid by substituting 4 or fewer characters, then the implementation suggests such a string as a correction.
+
 ===Recovering Secret===
 
 When the share index of a valid codex32 string (converted to lowercase) is not the letter "s", we call the string a codex32 share.
 The first character of the data part indicates the threshold of the share, and it is required to be a non-"0" digit.
 
-In order to recover a secret, one needs a set of valid shares such that:
-
-* All shares have the same threshold value, the same identifier, and the same length.
-* All of the share index values are distinct.
-* The number of shares is exactly equal to the (common) threshold value.
-
-If all the above conditions are satisfied, the <code>ms32_recover</code> function will return a codex32 secret when its argument is the list of codex32 shares with each share represented as a list of integers representing the characters converted using the bech32 character table from BIP-0173. 
 <source lang="python">
 BECH32_INV = [
     0, 1, 20, 24, 10, 8, 12, 29, 5, 11, 4, 9, 6, 28, 26, 31,
@@ -291,9 +284,6 @@ def ms32_interpolate(l, x):
             n ^= bech32_mul(w[j], l[j][i])
         res.append(n)
     return res
-
-def ms32_recover(shares):
-    return ms32_interpolate(shares, 16)
 </source>
 
 ===Generating Shares===
@@ -345,6 +335,18 @@ Along with the codex32 secret, the user must generate ''k''-1 other codex32 shar
 These shares should be generated as described in the "fresh secret" section.
 
 The codex32 secret and the ''k''-1 codex32 shares form a set of ''k'' valid initial codex32 strings from which additional shares can be derived as described above.
+
+In order to recover a secret, one needs a set of valid shares such that:
+
+* All shares have the same threshold value, the same identifier, and the same length.
+* All of the share index values are distinct.
+* The number of shares is exactly equal to the (common) threshold value.
+
+If all the above conditions are satisfied, the <code>ms32_recover</code> function will return a codex32 secret when its argument is the list of codex32 shares with each share represented as a list of integers representing the characters converted using the bech32 character table from BIP-0173. 
+<source lang="python">
+def ms32_recover(shares):
+    return ms32_interpolate(shares, 16)
+</source>
 
 ===Master seed format===
 
