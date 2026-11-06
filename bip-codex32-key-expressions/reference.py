@@ -130,7 +130,7 @@ def _encode(hrp: str, bits: str, *, identifier: str, threshold: int) -> str:
     return encoded
 
 
-def encode_public_key(key: bytes, *, identifier: str = "qqqq", threshold: int = 0) -> str:
+def encode_public_key(key: bytes, *, identifier: str, threshold: int = 0) -> str:
     _check_point(key)
     if len(key) == 33:
         raw = _bits(key[0] - 2, 1) + _bits(int.from_bytes(key[1:], "big"), 256)
@@ -138,14 +138,14 @@ def encode_public_key(key: bytes, *, identifier: str = "qqqq", threshold: int = 
     return _encode("pk", _bits(int.from_bytes(key, "big"), 520), identifier=identifier, threshold=threshold)
 
 
-def encode_xonly_key(key: bytes, *, identifier: str = "qqqq", threshold: int = 0) -> str:
+def encode_xonly_key(key: bytes, *, identifier: str, threshold: int = 0) -> str:
     _check_point(key, xonly=True)
     raw = _bits(int.from_bytes(key, "big"), 256)
     return _encode("xo", raw + _crc(raw, 4), identifier=identifier, threshold=threshold)
 
 
 def encode_private_key(
-    scalar: bytes, *, network: str, compressed: bool, identifier: str = "qqqq", threshold: int = 0
+    scalar: bytes, *, network: str, compressed: bool, identifier: str, threshold: int = 0
 ) -> str:
     _check_scalar(scalar)
     if type(compressed) is not bool:
@@ -158,7 +158,7 @@ def encode_private_key(
     return _encode("wf", raw, identifier=identifier, threshold=threshold)
 
 
-def encode_extended_key(key: ExtendedKey, *, identifier: str = "qqqq", threshold: int = 0) -> str:
+def encode_extended_key(key: ExtendedKey, *, identifier: str, threshold: int = 0) -> str:
     if key.kind not in VERSIONS:
         raise InvalidKey("unknown extended-key kind")
     if not 0 <= key.depth <= 255:

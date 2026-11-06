@@ -2,6 +2,7 @@
 
 import unittest
 from dataclasses import replace
+from functools import partial
 
 from codex32 import CodexError, derive_share, parse_codex32
 from codex32.bech32 import CHARSET, bech32_encode
@@ -32,6 +33,7 @@ from reference import (
     wif_to_base58,
 )
 
+ID = "test"  # There is no default identifier.
 # These strings are copied from BIP32 test vector 2.
 XPUB_MASTER = (
     "xpub661MyMwAqRbcFW31YEwpkMuc5THy2PSt5bDMsktWQcFF8syAmRUapSCGu8"
@@ -92,17 +94,17 @@ def _split(secret, *payloads, count):
 
 class ReferenceTests(unittest.TestCase):
     def test_public_key_shapes_and_validation(self):
-        compressed = encode_public_key(GENERATOR)
-        uncompressed = encode_public_key(UNCOMPRESSED)
-        xonly = encode_xonly_key(GENERATOR[1:])
+        compressed = encode_public_key(GENERATOR, identifier=ID)
+        uncompressed = encode_public_key(UNCOMPRESSED, identifier=ID)
+        xonly = encode_xonly_key(GENERATOR[1:], identifier=ID)
         self.assertEqual((len(compressed), len(uncompressed), len(xonly)), (74, 128, 74))
         self.assertEqual(decode_key(compressed).key, GENERATOR)
         self.assertEqual(decode_key(uncompressed).key, UNCOMPRESSED)
         self.assertEqual(decode_key(xonly).key, GENERATOR[1:])
         with self.assertRaises(InvalidKey):
-            encode_public_key(b"\x02" + b"\xff" * 32)
+            encode_public_key(b"\x02" + b"\xff" * 32, identifier=ID)
         with self.assertRaises(InvalidKey):
-            encode_xonly_key(b"\xff" * 32)
+            encode_xonly_key(b"\xff" * 32, identifier=ID)
 
     def test_private_key_wif_round_trip(self):
         first_symbols = {
@@ -116,7 +118,7 @@ class ReferenceTests(unittest.TestCase):
                 scalar = (1).to_bytes(32, "big")
                 wif = wif_to_base58(scalar, network=network, compressed=compressed)
                 self.assertEqual(wif_from_base58(wif), (scalar, network, compressed))
-                encoded = encode_private_key(scalar, network=network, compressed=compressed)
+                encoded = encode_private_key(scalar, network=network, compressed=compressed, identifier=ID)
                 self.assertEqual(encoded.split("1", 1)[1][6], first_symbols[(network, compressed)])
                 decoded = decode_key(encoded)
                 self.assertEqual(
@@ -124,7 +126,7 @@ class ReferenceTests(unittest.TestCase):
                 )
                 self.assertEqual(len(encoded), 74)
         with self.assertRaises(InvalidKey):
-            encode_private_key(b"\x00" * 32, network="main", compressed=True)
+            encode_private_key(b"\x00" * 32, network="main", compressed=True, identifier=ID)
 
     def test_extended_key_round_trip(self):
         for serialized in (XPUB_MASTER, XPRV_MASTER, XPUB, XPRV):
@@ -132,7 +134,7 @@ class ReferenceTests(unittest.TestCase):
             self.assertEqual(key.depth, 0 if serialized in (XPUB_MASTER, XPRV_MASTER) else 1)
             self.assertEqual(key.child_number, 0)
             self.assertEqual(extended_to_base58(key), serialized)
-            encoded = encode_extended_key(key)
+            encoded = encode_extended_key(key, identifier=ID)
             self.assertEqual(len(encoded), 144)
             self.assertEqual(decode_key(encoded).key, key)
 
@@ -141,14 +143,14 @@ class ReferenceTests(unittest.TestCase):
         hardened = ExtendedKey(
             key.kind, key.depth, key.parent_fingerprint, 0x80000001, key.chain_code, key.key
         )
-        encoded = encode_extended_key(hardened)
+        encoded = encode_extended_key(hardened, identifier=ID)
         self.assertEqual(decode_key(encoded).key, hardened)
         self.assertEqual(encoded[encoded.index("1") + 9], "s")
         for depth in (1, 31, 32, 255):
             deep = replace(hardened, depth=depth)
-            self.assertEqual(decode_key(encode_extended_key(deep)).key, deep)
+            self.assertEqual(decode_key(encode_extended_key(deep, identifier=ID)).key, deep)
         with self.assertRaises(InvalidKey):
-            encode_extended_key(replace(hardened, depth=256))
+            encode_extended_key(replace(hardened, depth=256), identifier=ID)
         data = [CHARSET.index(char) for char in encoded.split("1", 1)[1][:-15]]
         data[6:8] = [0b01000, 0]  # Depth 1 becomes 256, with the same parity.
         with self.assertRaisesRegex(InvalidKey, "depth exceeds 255"):
@@ -172,12 +174,12 @@ class ReferenceTests(unittest.TestCase):
                 + key.key
             )
             # Encode at depth 1, then zero the depth, the first two payload symbols.
-            encoded = encode_extended_key(replace(key, depth=1))
+            encoded = encode_extended_key(replace(key, depth=1), identifier=ID)
             data = [CHARSET.index(char) for char in encoded.split("1", 1)[1][:-15]]
             data[6:8] = [0, 0]
             for convert, value in (
                 (extended_to_base58, key),
-                (encode_extended_key, key),
+                (partial(encode_extended_key, identifier=ID), key),
                 (extended_from_base58, serialized),
                 (decode_key, bech32_encode("xpub", data, _CODEX32_LONG)),
             ):
@@ -235,19 +237,23 @@ class ReferenceTests(unittest.TestCase):
             with self.assertRaises(error):
                 recover_key(shares)
 
+    def test_identifier_is_required(self):
+        with self.assertRaises(TypeError):
+            encode_public_key(GENERATOR)
+
     def test_wrong_external_checksum(self):
-        key = encode_public_key(GENERATOR)
+        key = encode_public_key(GENERATOR, identifier=ID)
         with self.assertRaises(CodexError):
             decode_key(key[:-1] + ("q" if key[-1] != "q" else "p"))
 
     def test_internal_crc_and_zero_child_padding(self):
-        public = encode_public_key(GENERATOR)
+        public = encode_public_key(GENERATOR, identifier=ID)
         data = [CHARSET.index(char) for char in public.split("1", 1)[1][:-13]]
         data[-1] ^= 1
         with self.assertRaisesRegex(InvalidKey, "CRC mismatch"):
             decode_key(bech32_encode("pk", data, _CODEX32))
 
-        extended = encode_extended_key(extended_from_base58(XPUB))
+        extended = encode_extended_key(extended_from_base58(XPUB), identifier=ID)
         data = [CHARSET.index(char) for char in extended.split("1", 1)[1][:-15]]
         data[6 + 2] ^= 0b01000  # First reserved bit in the child-number field.
         with self.assertRaisesRegex(InvalidKey, "padding"):
