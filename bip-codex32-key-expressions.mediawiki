@@ -139,10 +139,10 @@ character, and the two statuses within a network are 2 bits apart.
 
 ===Error correction===
 
-Implementations MUST NOT correct the type. They MAY correct the origin as part of the codeword, where a substituted
-origin character changes one or two symbols of the expanded HRP, and the corrected origin MUST be a valid BIP-0380
-origin. Implementations SHOULD NOT correct the status character of a <code>wf</code> secret, and SHOULD report a
-correction that would change it rather than applying it.
+Implementations MAY correct errors anywhere in the codeword, the expanded HRP included, where a substituted HRP
+character changes one or two symbols. They MUST NOT exclude the type or any other position from the search, and a
+corrected origin MUST be a valid BIP-0380 origin. Implementations SHOULD NOT apply a correction that changes the type or
+the status character of a <code>wf</code> secret, and SHOULD report it instead.
 
 ===Identifier===
 
@@ -221,9 +221,11 @@ network has its own characters. A dedicated 53rd status symbol would match WIF's
 
 '''HRPs.''' Every pair of Bitcoin HRPs in use (<code>bc</code>, <code>tb</code>, <code>ms</code>, <code>cl</code>,
 <code>ln</code>, <code>sp</code>) differs in both characters, and every HRP here keeps that rule against them and each
-other. That leaves no name beginning "private" or "secret" or ending "key". It also explains why the type must not be
-corrected: <code>pk</code> and <code>pr</code> expand to <code>[3,3,0,16,11]</code> and <code>[3,3,0,16,18]</code>, so a
-decoder repairing one symbol could turn a private key into a public one.
+other. That leaves no name beginning "private" or "secret" or ending "key". Even so, <code>wf</code> and
+<code>pk</code> are two expanded symbols apart, as are <code>xprv</code> and <code>xpub</code>, so a correction that
+changes the type is reported rather than applied: it could turn a private key into a public one. The search still
+covers the type. Excluding it gives up corrections the checksum guarantees, and a decoder that then searches past that
+guarantee to explain an error in the type with errors elsewhere can return a false correction.
 
 * <code>pk</code> is how descriptors already spell "public key", in <code>pk()</code>, <code>pkh()</code> and
   <code>wpkh()</code>. Public keys carry no network, as in BIP-0380, and a <code>tpk</code>-shaped HRP is registered in
