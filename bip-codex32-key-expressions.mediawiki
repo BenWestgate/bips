@@ -140,6 +140,12 @@ BIP-0093 already suggests, from something the holder can reconstruct that is not
 each cosigner's key SHOULD carry its own identifier naming ''that cosigner'', and implementations SHOULD NOT give every
 key in a set the same identifier.
 
+===Recovery===
+
+A recovered secret that decodes as a valid key is not proof that the shares came from one set. Before using a
+recovered key, implementations SHOULD check it against something stored apart from the shares, such as its master
+fingerprint, a descriptor, or a known address.
+
 ===Generation from fresh shares===
 
 Splitting a key that already exists works for every profile: the secret is encoded first, with its CRC or status bits
@@ -183,8 +189,10 @@ symbols. At width 4 those values are only <code>1</code>, <code>x^2 + x</code> a
 fails every all-zero payload. At widths 2 and 3 every nonzero value passes one length in 3 or 7, and all ones passes
 none of the lengths used by <code>ms</code>, <code>cl</code> or this document. A parity bit can detect neither
 insertion, so it takes no final XOR, which keeps every all-zero payload failing. Because the CRC-valid payloads are not
-closed under GF(32) interpolation, a CRC checks the recovered secret rather than each share, so it catches a recovery
-from wrong or mixed shares, which the checksum cannot.
+closed under GF(32) interpolation, a CRC checks the recovered secret rather than each share, so it catches most
+recoveries from wrong or mixed shares, which the checksum cannot. A random recovered payload still decodes as a valid
+key about 1 time in 4 for <code>wf</code>, 1 in 16 for a compressed <code>pk</code>, 1 in 32 for <code>xo</code> and 1
+in 64 for an extended key.
 
 '''Extended key layout.''' Putting the child number before the fingerprint aligns both readable fields. Depth takes two
 characters so that every BIP-0032 depth is representable; one character would cap it at 31 and save only the 144th
