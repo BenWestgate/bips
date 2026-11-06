@@ -19,9 +19,9 @@ python -m unittest -v test_reference.py
 The module implements `pk`, `xo`, `wf`, `xpub`, `xprv`, `tpub`, and `tprv`.
 `decode_key` rejects ordinary shares as key material; `recover_key` first uses
 BIP 93 recovery with exactly the declared threshold and then validates the
-recovered key. Key origins and trailing derivation paths are descriptor syntax
-outside the encoded key. There is no Bitcoin Core wallet integration here.
+recovered key. A key origin, when given, is part of the HRP; trailing
+derivation paths stay outside the string. There is no Bitcoin Core wallet
+integration here.
 
-The format is still a draft. In particular, the key-origin location is
-unresolved, and the test suite is an initial set of round trips and negative
-cases rather than the complete normative vector set.
+The format is still a draft, and the test suite is an initial set of round
+trips and negative cases rather than the complete normative vector set.

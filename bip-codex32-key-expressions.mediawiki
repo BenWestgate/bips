@@ -100,6 +100,15 @@ The first nine characters are readable: two for depth and seven for the child nu
 reads <code>qqqqqqq</code>, hardened index 0 reads <code>sqqqqqq</code>, and index 1 ends in <code>p</code> instead of
 <code>q</code>.
 
+===Key origin===
+
+A key with BIP-0380 key origin information carries it in the HRP: the bracketed origin exactly as BIP-0380 writes it,
+followed by the type (<code>pk</code>, <code>xo</code>, <code>wf</code>, <code>xpub</code>, <code>xprv</code>,
+<code>tpub</code> or <code>tprv</code>), as in <code>[d34db33f/48h/0h/0h/2h]xpub1</code>. Without an origin the HRP is
+the type alone. The checksum covers the whole HRP, so the origin is checksummed exactly as written, and every share of
+a key carries its origin. Encoders SHOULD write hardened steps with <code>h</code>. Inside a descriptor the string MUST
+be lower case, since BIP-0380 rejects an upper-case hardened marker. The HRP is at most 83 characters, as in BIP-0173.
+
 ===Trailing derivation steps===
 
 Trailing derivation steps after an extended key MUST remain outside the string, in BIP-0380 syntax, and are applied
@@ -130,8 +139,10 @@ character, and the two statuses within a network are 2 bits apart.
 
 ===Error correction===
 
-Implementations MUST NOT correct the human-readable part. Implementations SHOULD NOT correct the status character of a
-<code>wf</code> secret, and SHOULD report a correction that would change it rather than applying it.
+Implementations MUST NOT correct the type. They MAY correct the origin as part of the codeword, where a substituted
+origin character changes one or two symbols of the expanded HRP, and the corrected origin MUST be a valid BIP-0380
+origin. Implementations SHOULD NOT correct the status character of a <code>wf</code> secret, and SHOULD report a
+correction that would change it rather than applying it.
 
 ===Identifier===
 
@@ -210,7 +221,7 @@ network has its own characters. A dedicated 53rd status symbol would match WIF's
 
 '''HRPs.''' Every pair of Bitcoin HRPs in use (<code>bc</code>, <code>tb</code>, <code>ms</code>, <code>cl</code>,
 <code>ln</code>, <code>sp</code>) differs in both characters, and every HRP here keeps that rule against them and each
-other. That leaves no name beginning "private" or "secret" or ending "key". It also explains why the HRP must not be
+other. That leaves no name beginning "private" or "secret" or ending "key". It also explains why the type must not be
 corrected: <code>pk</code> and <code>pr</code> expand to <code>[3,3,0,16,11]</code> and <code>[3,3,0,16,18]</code>, so a
 decoder repairing one symbol could turn a private key into a public one.
 
@@ -223,6 +234,11 @@ decoder repairing one symbol could turn a private key into a public one.
 * [https://lists.linuxfoundation.org/pipermail/bitcoin-dev/2018-May/016038.html Bech32X] (2018, never implemented) used
   <code>pk</code> for a mainnet ''private'' key, which is why the private-key HRP is kept far from it.
   [[bip-0178.mediawiki|BIP-0178]] records a key's script type and stays in base58.
+
+'''Key origins.''' The origin goes in the HRP so that the checksum and error correction cover it as well as the key. A
+descriptor parser already reads the bracketed origin in front of a key, so the string parses unchanged, and only the
+checksum is computed over a longer HRP. Writing <code>h</code> leaves the brackets as the only characters of an
+upper-case HRP outside QR's alphanumeric set.
 
 '''Identifiers.''' An identifier computed from the key can be recomputed by anyone who later learns it. The BIP-0032
 fingerprint links a share to P2PKH and P2WPKH outputs for <code>pk</code> and <code>wf</code>, to shared key origin
@@ -263,24 +279,24 @@ exceed the next smaller version at L, M and H, and leave too little room for any
 The HRP names the kind of material it protects, so a <code>wf</code> or <code>xprv</code> string announces a private key
 and a <code>pk</code> or <code>xo</code> string a public one. This is inherent: a decoder needs to know which payload it
 holds, and secret sharing operates on the data part, so the HRP is the same in every share of a set. Holders who need
-the kind of material concealed must conceal the strings themselves.
+the kind of material concealed must conceal the strings themselves. An origin also discloses the master fingerprint and
+derivation path, in every share.
 
 ==Versioning==
 
-There is no version field. The HRP is the version: an incompatible change to any payload layout takes a new HRP, and a
-decoder that does not recognise an HRP declines to decode rather than guessing. Implementations MUST NOT attempt to
-decode an unrecognised HRP under a known layout.
+There is no version field. The type is the version: an incompatible change to any payload layout takes a new type, and
+a decoder that does not recognise a type declines to decode rather than guessing. Implementations MUST NOT attempt to
+decode an unrecognised type under a known layout.
 
 ==QR encoding==
 
 Encoders SHOULD upper-case a codex32 string before encoding it, since a lower-case string forces byte mode and forfeits
 the alphanumeric saving.
 
-Where a key carries BIP-0380 key origin information, encoders SHOULD put the origin in a byte-mode segment and the
-upper-cased key in an alphanumeric one, rather than encode the concatenation in one mode. The origin stays as written,
-since BIP-0380 rejects an upper-case hardened marker. For a 143-character extended key with a four-step origin this is
-996 bits against 1340 for a single byte-mode segment, version 6 rather than 8 at level L. Segmentation is ordinary QR,
-so nothing is required of decoders.
+The brackets of an origin are not in QR's alphanumeric set, so encoders SHOULD put each bracket in a byte-mode segment
+and the rest of the upper-cased string in alphanumeric segments, rather than encode the whole string in byte mode. For a
+144-character extended key with a four-step origin this is 974 bits against 1348, version 6 rather than 8 at level L.
+Segmentation is ordinary QR, so nothing is required of decoders, which lower-case the string as BIP-0093 requires.
 
 ==Backwards compatibility==
 
@@ -292,9 +308,7 @@ wherever they are accepted today.
 
 * Whether to spend a 53rd symbol on a dedicated status character, buying exact parity with WIF's leading characters and
   a CRC-4 at the cost of the shape match with <code>pk</code>.
-* Whether to pad the fingerprint as well, at 144 characters, to free 2 bits for a CRC over the extended key metadata.
-* Key origin information: a bracketed BIP-0380 prefix outside the codex32 string, or folded into the HRP. Folding is the
-  larger QR saving for a cosigner-heavy descriptor; a bare key is where the one-version saving comes from.
+* Whether to pad the fingerprint as well, at 145 characters, to free 2 bits for a CRC over the extended key metadata.
 * Whether the extended-key HRPs should stay 4 characters, given that <code>xprv</code> and <code>tprv</code> are then
   told apart by content rather than by shape.
 
@@ -302,12 +316,13 @@ wherever they are accepted today.
 
 An experimental Python key-material codec and interoperability checks are provided in
 <code>bip-codex32-key-expressions/</code>. It imports the generic codex32 framing and checksum implementation from
-<code>python-codex32</code>. The layouts and key validation in that directory are independent code. It does not
-implement descriptor parsing or choose a representation for key origin information.
+<code>python-codex32</code>. The layouts, key origins and key validation in that directory are independent code. It
+does not parse descriptors.
 
 ==Test vectors==
 
 To be written once the payload layouts stop moving. They must cover, for each profile: the bit packing of a known key,
 the CRC or parity value, the <code>wf</code> status characters for all four network and compression combinations, an
-extended key at depth zero and one at depth greater than zero with a hardened child number, trailing derivation steps
-outside the string, and invalid cases for a wrong CRC, nonzero child-number padding and an unrecognised HRP.
+extended key at depth zero and one at depth greater than zero with a hardened child number, a key with an origin,
+trailing derivation steps outside the string, and invalid cases for a wrong CRC, nonzero child-number padding and an
+unrecognised type.

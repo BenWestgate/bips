@@ -18,6 +18,7 @@ from codex32.errors import (
 
 from reference import (
     VERSIONS,
+    DecodedKey,
     ExtendedKey,
     InvalidKey,
     _base58check_encode,
@@ -86,7 +87,7 @@ def _codex32(hrp, header, payload):
 
 def _split(secret, *payloads, count):
     """Choose the payloads of the first k - 1 shares, then derive the rest as in BIP93."""
-    hrp, data = secret.split("1", 1)
+    hrp, _, data = secret.rpartition("1")
     chosen = [_codex32(hrp, data[:5] + index, payload) for index, payload in zip("ac", payloads)]
     basis = [parse_codex32(text) for text in (secret, *chosen)]
     return chosen + [derive_share(basis, index).text for index in "acdefgh"[len(chosen) : count]]
@@ -189,7 +190,7 @@ class ReferenceTests(unittest.TestCase):
     def test_recovery_ignores_share_payload_rules(self):
         xprv = extended_from_base58(XPRV)
         wif = encode_private_key(xprv.key, network="main", compressed=True, identifier="keys", threshold=2)
-        public = encode_public_key(GENERATOR, identifier="pkey", threshold=2)
+        public = encode_public_key(GENERATOR, identifier="pkey", threshold=2, origin="d34db33f/84h/1h/0h")
         public_payload = parse_codex32(public).payload_symbols
         extended = encode_extended_key(xprv, identifier="xprv", threshold=3)
         sets = (
@@ -201,7 +202,7 @@ class ReferenceTests(unittest.TestCase):
             # Each chosen payload would be rejected as a secret.
             for payload, reason in chosen:
                 with self.assertRaisesRegex(InvalidKey, reason):
-                    decode_key(_codex32(secret.split("1")[0], "0qqqqs", payload))
+                    decode_key(_codex32(secret.rpartition("1")[0], "0qqqqs", payload))
             shares = _split(secret, *(payload for payload, _ in chosen), count=5)
             for share in shares:
                 with self.assertRaisesRegex(InvalidKey, "recover the secret first"):
@@ -236,6 +237,27 @@ class ReferenceTests(unittest.TestCase):
         ):
             with self.assertRaises(error):
                 recover_key(shares)
+
+    def test_origin_in_hrp(self):
+        key = extended_from_base58(XPUB)
+        origin = "d34db33f/48h/0'/0h/2h"
+        encoded = encode_extended_key(key, identifier=ID, origin=origin)
+        # A BIP380 parser splits the origin from the key as it would for base58.
+        bracketed, _, rest = encoded.partition("]")
+        self.assertEqual((bracketed, rest[:5]), ("[" + origin, "xpub1"))
+        for text in (encoded, encoded.upper()):
+            self.assertEqual(decode_key(text), DecodedKey("xpub", key, origin=origin))
+        with self.assertRaises(CodexError):
+            decode_key(encoded.replace("48h", "49h"))
+        # A 74-character key moves to the long checksum.
+        public = encode_public_key(GENERATOR, identifier=ID, origin="d34db33f/84h/0h/0h")
+        self.assertEqual(len(public), len("[d34db33f/84h/0h/0h]") + 76)
+        self.assertEqual(decode_key(public).origin, "d34db33f/84h/0h/0h")
+        for bad in ("d34db33", "D34DB33F", "d34db33f/", "d34db33f/0x", "d34db33f/2147483648h"):
+            with self.assertRaises(InvalidKey):
+                encode_public_key(GENERATOR, identifier=ID, origin=bad)
+        with self.assertRaisesRegex(InvalidKey, "83"):
+            encode_public_key(GENERATOR, identifier=ID, origin="d34db33f" + "/0h" * 25)
 
     def test_identifier_is_required(self):
         with self.assertRaises(TypeError):

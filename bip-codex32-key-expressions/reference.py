@@ -55,6 +55,7 @@ class DecodedKey:
     key: bytes | ExtendedKey
     network: str | None = None
     compressed: bool | None = None
+    origin: str | None = None
 
 
 def _bits(value: int, width: int) -> str:
@@ -116,7 +117,27 @@ def _check_point(key: bytes, *, xonly: bool = False) -> None:
     raise InvalidKey("expected a compressed or uncompressed secp256k1 public key")
 
 
+def _check_origin(origin: str) -> None:
+    """Accept a BIP380 key origin without brackets: 8 hex digits, then /NUM, /NUMh or /NUM' steps."""
+    fingerprint, *steps = origin.split("/")
+    if len(fingerprint) != 8 or any(digit not in "0123456789abcdef" for digit in fingerprint):
+        raise InvalidKey("origin fingerprint must be 8 lowercase hex digits")
+    for step in steps:
+        number = step[:-1] if step[-1:] in ("h", "'") else step
+        if not number.isascii() or not number.isdigit() or int(number) >= 1 << 31:
+            raise InvalidKey("origin path steps must be integers below 2**31")
+
+
+def _hrp(kind: str, origin: str | None) -> str:
+    if origin is None:
+        return kind
+    _check_origin(origin)
+    return f"[{origin}]{kind}"
+
+
 def _encode(hrp: str, bits: str, *, identifier: str, threshold: int) -> str:
+    if len(hrp) > 83:
+        raise InvalidKey("HRP exceeds 83 characters")
     if threshold not in (0, *range(2, 10)):
         raise ValueError("threshold must be 0 or 2 through 9")
     if len(identifier) != 4 or any(letter not in CHARSET for letter in identifier):
@@ -130,22 +151,30 @@ def _encode(hrp: str, bits: str, *, identifier: str, threshold: int) -> str:
     return encoded
 
 
-def encode_public_key(key: bytes, *, identifier: str, threshold: int = 0) -> str:
+def encode_public_key(key: bytes, *, identifier: str, threshold: int = 0, origin: str | None = None) -> str:
     _check_point(key)
     if len(key) == 33:
         raw = _bits(key[0] - 2, 1) + _bits(int.from_bytes(key[1:], "big"), 256)
-        return _encode("pk", raw + _crc(raw, 3), identifier=identifier, threshold=threshold)
-    return _encode("pk", _bits(int.from_bytes(key, "big"), 520), identifier=identifier, threshold=threshold)
+        raw += _crc(raw, 3)
+    else:
+        raw = _bits(int.from_bytes(key, "big"), 520)
+    return _encode(_hrp("pk", origin), raw, identifier=identifier, threshold=threshold)
 
 
-def encode_xonly_key(key: bytes, *, identifier: str, threshold: int = 0) -> str:
+def encode_xonly_key(key: bytes, *, identifier: str, threshold: int = 0, origin: str | None = None) -> str:
     _check_point(key, xonly=True)
     raw = _bits(int.from_bytes(key, "big"), 256)
-    return _encode("xo", raw + _crc(raw, 4), identifier=identifier, threshold=threshold)
+    return _encode(_hrp("xo", origin), raw + _crc(raw, 4), identifier=identifier, threshold=threshold)
 
 
 def encode_private_key(
-    scalar: bytes, *, network: str, compressed: bool, identifier: str, threshold: int = 0
+    scalar: bytes,
+    *,
+    network: str,
+    compressed: bool,
+    identifier: str,
+    threshold: int = 0,
+    origin: str | None = None,
 ) -> str:
     _check_scalar(scalar)
     if type(compressed) is not bool:
@@ -155,10 +184,12 @@ def encode_private_key(
     except KeyError as error:
         raise ValueError("network must be main or test; compressed must be bool") from error
     raw = _bits(status, 4) + _bits(int.from_bytes(scalar, "big"), 256)
-    return _encode("wf", raw, identifier=identifier, threshold=threshold)
+    return _encode(_hrp("wf", origin), raw, identifier=identifier, threshold=threshold)
 
 
-def encode_extended_key(key: ExtendedKey, *, identifier: str, threshold: int = 0) -> str:
+def encode_extended_key(
+    key: ExtendedKey, *, identifier: str, threshold: int = 0, origin: str | None = None
+) -> str:
     if key.kind not in VERSIONS:
         raise InvalidKey("unknown extended-key kind")
     if not 0 <= key.depth <= 255:
@@ -186,7 +217,7 @@ def encode_extended_key(key: ExtendedKey, *, identifier: str, threshold: int = 0
         _check_scalar(key.key)
         raw += _bits(int.from_bytes(key.key, "big"), 256)
         raw += _crc(raw, 1)
-    return _encode(key.kind, raw, identifier=identifier, threshold=threshold)
+    return _encode(_hrp(key.kind, origin), raw, identifier=identifier, threshold=threshold)
 
 
 def decode_key(text: str) -> DecodedKey:
@@ -194,7 +225,12 @@ def decode_key(text: str) -> DecodedKey:
     if isinstance(artifact, Share):
         raise InvalidKey("shares do not individually encode keys; recover the secret first")
     bits = _from_symbols(artifact.payload_symbols)
-    hrp = artifact.hrp
+    hrp, origin = artifact.hrp, None
+    if hrp.startswith("["):
+        origin, bracket, hrp = hrp[1:].partition("]")
+        if not bracket:
+            raise InvalidKey("origin has no closing bracket")
+        _check_origin(origin)
     if hrp == "pk":
         if len(bits) == 260:
             raw, padding = bits[:257], bits[257:]
@@ -206,13 +242,13 @@ def decode_key(text: str) -> DecodedKey:
         else:
             raise InvalidKey("incorrect public-key payload length")
         _check_point(key)
-        return DecodedKey(hrp, key)
+        return DecodedKey(hrp, key, origin=origin)
     if hrp == "xo":
         if len(bits) != 260 or bits[256:] != _crc(bits[:256], 4):
             raise InvalidKey("x-only payload length or CRC mismatch")
         key = int(bits[:256], 2).to_bytes(32, "big")
         _check_point(key, xonly=True)
-        return DecodedKey(hrp, key)
+        return DecodedKey(hrp, key, origin=origin)
     if hrp == "wf":
         if len(bits) != 260:
             raise InvalidKey("incorrect WIF payload length")
@@ -222,7 +258,7 @@ def decode_key(text: str) -> DecodedKey:
             raise InvalidKey("unknown WIF status")
         scalar = int(bits[4:], 2).to_bytes(32, "big")
         _check_scalar(scalar)
-        return DecodedKey(hrp, scalar, *status)
+        return DecodedKey(hrp, scalar, *status, origin=origin)
     if hrp in VERSIONS:
         if len(bits) != 590 or bits[11:14] != "000":
             raise InvalidKey("extended-key length or child-number padding is invalid")
@@ -244,7 +280,7 @@ def decode_key(text: str) -> DecodedKey:
         extended = ExtendedKey(hrp, depth, fingerprint, child_number, chain_code, key)
         if depth == 0 and (fingerprint != b"\0" * 4 or child_number != 0):
             raise InvalidKey("master metadata must be zero")
-        return DecodedKey(hrp, extended)
+        return DecodedKey(hrp, extended, origin=origin)
     raise InvalidKey(f"unsupported key HRP: {hrp}")
 
 
